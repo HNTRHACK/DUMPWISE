@@ -1,3 +1,5 @@
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,6 +21,15 @@ export async function createTestApp(): Promise<INestApplication> {
   return app;
 }
 
+// Fixture client is never injected into the application under test.
+export function fixtureDb(app: INestApplication): PrismaService {
+ const url = process.env['TEST_MIGRATION_DATABASE_URL'];
+ if (!url || new URL(url).pathname !== '/' + process.env['DUMPWISE_DISPOSABLE_DB']) throw new Error('Fixture DB mismatch');
+ const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+ const close = app.close.bind(app);
+ app.close = async () => { await client.$disconnect(); await close(); };
+ return client as PrismaService;
+}
 export const TEST_PASSWORD = 'blue tractor river mango 42';
 
 /** Gives the user a password and logs in through POST /v1/auth/login. Returns the token pair. */

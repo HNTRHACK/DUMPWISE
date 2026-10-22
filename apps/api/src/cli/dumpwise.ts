@@ -1,3 +1,7 @@
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../generated/prisma/client.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
+import { AuditService } from '../audit/audit.service.js';
 // Operator CLI for Phase 1. Runs the same services as the API (same authorization rules)
 // without starting an HTTP server. Usage: node dist/cli/dumpwise.js <command> [options]
 //
@@ -58,30 +62,41 @@ function need(name: keyof typeof values): string {
 const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
 const prisma = app.get(PrismaService);
 const log = new Logger('cli');
+let operator: PrismaClient | undefined;
+function provisioning(): PrismaClient {
+  if (!operator) {
+    const url = process.env['PROVISIONER_DATABASE_URL'];
+    if (!url) throw new Error('PROVISIONER_DATABASE_URL is required for operator commands');
+    if (new URL(url).username === new URL(process.env['DATABASE_URL']!).username) throw new Error('Provisioner and runtime roles must differ');
+    operator = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+  }
+  return operator;
+}
 
 async function resolve(): Promise<{ organizationId: string; userId: string }> {
-  const org = await prisma.organization.findUnique({ where: { slug: need('org') } });
   const user = await prisma.user.findUnique({ where: { email: need('actor').toLowerCase() } });
-  if (!org || !user) throw new Error('Unknown organization or actor');
+  if (!user) throw new Error('Unknown organization or actor');
+  const org = await app.get(TenantDb).run({ userId: user.id }, tx => tx.organization.findUnique({ where: { slug: need('org') } }));
+  if (!org) throw new Error('Unknown organization or actor');
   return { organizationId: org.id, userId: user.id };
 }
 
 try {
   switch (positionals[0]) {
     case 'seed-synthetic': {
-      const org = await prisma.organization.upsert({
+      const org = await provisioning().organization.upsert({
         where: { slug: SYNTHETIC_ORG.slug },
         update: {},
         create: { ...SYNTHETIC_ORG, dataClassification: 'SYNTHETIC' },
       });
       if (org.dataClassification !== 'SYNTHETIC') throw new Error(`${org.slug} exists and is not SYNTHETIC`);
       for (const u of SYNTHETIC_USERS) {
-        const user = await prisma.user.upsert({
+        const user = await provisioning().user.upsert({
           where: { email: u.email },
           update: {},
           create: { email: u.email, displayName: u.displayName },
         });
-        await prisma.membership.upsert({
+        await provisioning().membership.upsert({
           where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
           update: {},
           create: { organizationId: org.id, userId: user.id, role: u.role },
@@ -141,17 +156,17 @@ try {
     case 'create-user': {
       const email = need('email').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) throw new Error('Invalid --email');
-      const user = await prisma.user.create({ data: { email, displayName: need('name').slice(0, 120) } });
+      const user = await provisioning().user.create({ data: { email, displayName: need('name').slice(0, 120) } });
       console.log(JSON.stringify({ userId: user.id, email: user.email, note: 'No password yet: run reset-password' }, null, 2));
       break;
     }
     case 'add-member': {
       const role = need('role');
       if (role !== 'OWNER' && role !== 'ANALYST' && role !== 'VIEWER') throw new Error('--role must be OWNER, ANALYST or VIEWER');
-      const org = await prisma.organization.findUnique({ where: { slug: need('org') } });
-      const user = await prisma.user.findUnique({ where: { email: need('email').toLowerCase() } });
+      const org = await provisioning().organization.findUnique({ where: { slug: need('org') } });
+      const user = await provisioning().user.findUnique({ where: { email: need('email').toLowerCase() } });
       if (!org || !user) throw new Error('Unknown organization or user');
-      const m = await prisma.membership.upsert({
+      const m = await provisioning().membership.upsert({
         where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
         update: { role },
         create: { organizationId: org.id, userId: user.id, role },
@@ -160,11 +175,11 @@ try {
       break;
     }
     case 'reset-password': {
-      const user = await prisma.user.findUnique({ where: { email: need('email').toLowerCase() } });
+      const user = await provisioning().user.findUnique({ where: { email: need('email').toLowerCase() } });
       if (!user) throw new Error('Unknown user');
       // 144 random bits; shown once and never stored in plain text.
       const password = randomBytes(18).toString('base64url');
-      await app.get(AuthService).setPassword(user.id, password);
+      await new AuthService(provisioning() as PrismaService, app.get(ConfigService), app.get(AuditService)).setPassword(user.id, password);
       console.log(`Temporary password for ${user.email} (shown once; change it via POST /v1/auth/change-password):`);
       console.log(password);
       break;
@@ -177,5 +192,6 @@ try {
   log.error(e instanceof Error ? e.message : String(e));
   process.exitCode = 1;
 } finally {
+  await operator?.$disconnect();
   await app.close();
 }

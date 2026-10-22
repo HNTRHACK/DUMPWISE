@@ -10,6 +10,8 @@ import type { Env } from './config/env.js';
 export function configureApp(app: INestApplication): void {
   const express = app as NestExpressApplication;
   express.disable('x-powered-by');
+  const proxy = app.get<ConfigService<Env, true>>(ConfigService).get('TRUST_PROXY', { infer: true });
+  express.set('trust proxy', proxy === 'false' ? false : proxy === 'true' ? true : /^\d+$/.test(proxy) ? Number(proxy) : proxy.split(',').map(s => s.trim()));
   // Security headers: no MIME sniffing, no framing, strict referrer policy, CSP, etc.
   // HSTS and "upgrade-insecure-requests" assume HTTPS; on plain-HTTP localhost they would
   // make browsers fetch assets over https:// and break the page, so they are production-only.

@@ -1,7 +1,7 @@
 # Security
 
 This document separates what is **implemented and tested** from what is **not done yet**.
-The system is a local development build (Phase 2a: authentication + protected APIs). It is
+The system is a local development build (Phase 2B security hardening in progress). It is
 **not** production-ready and must not receive real company data.
 
 ## Implemented controls
@@ -74,8 +74,8 @@ The system is a local development build (Phase 2a: authentication + protected AP
 |---|---|---|---|
 | 1 | Local accounts only: no SSO/OIDC and no multi-factor authentication | Weaker than enterprise SSO; no MFA | Add an OIDC `Authenticator` (e.g. Microsoft Entra ID) and/or TOTP MFA (needs an external account/approval) |
 | 2 | Operator CLI trusts the `--actor` email. Anyone with the `.env` credentials can act as any user. All operations are now also available over authenticated HTTP. | Medium if a machine is shared | Restrict CLI to bootstrap tasks (create-user, reset-password) |
-| 3 | No PostgreSQL Row-Level Security. Isolation relies on service code plus composite FKs (both tested). | A future query that forgets the filter could leak | Add RLS policies keyed on a per-transaction `app.organization_id` setting |
-| 4 | Rate limits are in memory and per IP: they reset on restart, are not shared across instances, and need `trust proxy` behind a reverse proxy (otherwise every client looks like the proxy) | Weaker limits in a multi-instance deployment | Redis-backed throttler storage; configure trusted proxies |
+| 3 | RLS tenant context is set by trusted application code | Stolen runtime SQL credentials can set a different tenant context | RLS supplements service authorization; it does not protect against arbitrary SQL execution |
+| 4 | PostgreSQL rate buckets persist and are shared; expired buckets are not yet purged | Table growth and an extra database request per limit | Operator cleanup; configure TRUST_PROXY only for known proxy paths |
 | 4b | Account lockout can be triggered by anyone who knows an e-mail address (denial of service for that user) | Annoyance, not data exposure | Consider progressive delays or CAPTCHA instead of hard lockout |
 | 4c | No password blocklist beyond a few words; no breached-password check | Weak passwords possible within the policy | Add a larger blocklist; an offline k-anonymity breach check needs approval (external service) |
 | 4d | Expired and revoked sessions are never purged (the runtime role cannot DELETE) | Table growth | Scheduled cleanup job using the admin role |
@@ -94,3 +94,19 @@ The system is a local development build (Phase 2a: authentication + protected AP
 2. Never send company data to external AI or telemetry services.
 3. Every new query on business tables must filter by the verified `organizationId`.
 4. Every new table gets `organization_id`, composite FKs, and runtime-role grants (`npm run db:roles`).
+
+## Phase 2B database architecture and verification
+
+Prisma 7 runtime connections use PrismaPg and DATABASE_URL. Migrations use MIGRATION_DATABASE_URL separately. TenantDb uses an interactive transaction and parameterized set_config(..., true), so context is local to that transaction. Service filters and composite foreign keys remain in place.
+
+RLS is ENABLED and FORCED on six financial/master tables plus organizations, memberships and audit_events. Missing context hides business rows and rejects inserts. UPDATE has both visibility and new-row checks. DELETE is denied altogether by runtime grants; tests do not grant DELETE just to exercise a policy. Organizations/memberships are read-only for the API; audit events are append-only. Global authentication and rate-limit tables are intentionally outside tenant RLS.
+
+The setup script uses an explicit table allowlist, distinct role names and an atomic permissions transaction. The runtime role is NOSUPERUSER, NOBYPASSRLS, NOCREATEROLE. The operator provisioner has BYPASSRLS for identity administration but no financial-table privileges. The CLI opens that connection only for provisioning commands; financial commands still use runtime services and verified membership. The migration connection still uses the local superuser (limitation 7 remains).
+
+AppModule now uses PostgreSQL throttler storage. TRUST_PROXY defaults to false; configuring true trusts every proxy and is unsuitable when untrusted clients can directly reach the API. Use a trusted address list appropriate to the deployment. Database failures fail requests rather than silently disabling throttling.
+
+Tests run via npm run test:e2e, which builds the CLI, creates a new dumpwise_verify_<random>_test database and unique roles, deploys migrations there, and runs the real app with restricted credentials. No existing database is reset, truncated or reused. Databases and roles are retained for inspection; cleanup requires separate authorization. Fixture creation and independent stored-data assertions use a separately guarded test admin client, never injected into the app. Actual RLS queries and pooling tests use the restricted role.
+
+Coverage includes missing-context SELECT/INSERT/UPDATE, cross-tenant SELECT/INSERT/UPDATE and tenant reassignment, DELETE permission denial, commit/rollback context cleanup through a one-connection Prisma pool, concurrent tenant calls, runtime role flags, all nine RLS table flags, forbidden runtime identity writes, provisioner financial denial, shared concurrent rate counters, HTTP 429 and CLI provisioning. CRUD adversarial tests use products as a representative business table; all financial workflows are exercised by the existing pipeline/API suite. This is not an exhaustive adversarial CRUD matrix for every table.
+
+New login-abuse settings, session caps and login-source metadata remain unfinished; existing lockout is retained. CLI --actor remains operator-trusted. No production deployment or development grants were changed during this verification. Exact run results are in PHASE_2B_HANDOFF.md.

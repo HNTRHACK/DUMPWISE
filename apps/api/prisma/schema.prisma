@@ -82,6 +82,8 @@ model User {
   // "scrypt$N$r$p$salt$hash" (see src/auth/password-hasher.ts). NULL = cannot log in.
   passwordHash      String?   @map("password_hash") @db.VarChar(255)
   passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  // DEPRECATED since Phase 2B (per-account hard lockout was a denial-of-service lever).
+  // No longer read or written; kept so no data is dropped without approval.
   failedLoginCount  Int       @default(0) @map("failed_login_count")
   lockedUntil       DateTime? @map("locked_until") @db.Timestamptz(3)
   disabledAt        DateTime? @map("disabled_at") @db.Timestamptz(3)
@@ -91,6 +93,7 @@ model User {
   memberships  Membership[]
   auditEvents  AuditEvent[]
   authSessions AuthSession[]
+  loginSources UserLoginSource[]
 
   @@map("users")
 }
@@ -107,6 +110,8 @@ model AuthSession {
   previousRefreshTokenHash  String?   @unique @map("previous_refresh_token_hash") @db.Char(64)
   expiresAt                 DateTime  @map("expires_at") @db.Timestamptz(3) // absolute session end
   lastRefreshedAt           DateTime? @map("last_refreshed_at") @db.Timestamptz(3)
+  lastSeenAt                DateTime? @map("last_seen_at") @db.Timestamptz(3) // updated at most once a minute
+  userAgent                 String?   @map("user_agent") @db.VarChar(200) // helps users recognise their devices
   revokedAt                 DateTime? @map("revoked_at") @db.Timestamptz(3)
   revokedReason             String?   @map("revoked_reason") @db.VarChar(40)
   createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -114,7 +119,35 @@ model AuthSession {
   user User @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([userId, revokedAt])
+  @@index([expiresAt])
   @@map("auth_sessions")
+}
+
+// Networks a user has successfully logged in from: SHA-256(user id + client IP), never the
+// raw IP. While an account is under a distributed password attack, only known sources may log in.
+model UserLoginSource {
+  userId        String   @map("user_id") @db.Uuid
+  sourceHash    String   @map("source_hash") @db.Char(64)
+  firstSeenAt   DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSuccessAt DateTime @default(now()) @map("last_success_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, sourceHash])
+  @@map("user_login_sources")
+}
+
+// Shared fixed-window counters used by the HTTP rate limiter (keys from @nestjs/throttler)
+// and by login-abuse protection (keys "login:<kind>:<hash>"). Shared by all API instances;
+// time comes from the database clock.
+model RateLimitBucket {
+  key             String    @id @db.VarChar(160)
+  hits            Int
+  windowExpiresAt DateTime  @map("window_expires_at") @db.Timestamptz(3)
+  blockedUntil    DateTime? @map("blocked_until") @db.Timestamptz(3)
+
+  @@index([windowExpiresAt])
+  @@map("rate_limit_buckets")
 }
 
 model Membership {

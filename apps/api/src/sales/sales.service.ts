@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import type { OrganizationAccess } from '../auth/organization-access.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
 import type { MonthlySalesQueryDto, MonthlySalesResponseDto, MonthlySalesRowDto } from './sales.dto.js';
 
 const MAX_MONTHS = 36;
@@ -13,7 +13,7 @@ function monthIndex(m: string): number {
 
 @Injectable()
 export class SalesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly tenantDb: TenantDb) {}
 
   /**
    * Monthly net sales from PUBLISHED batches only, for the caller's organization only.
@@ -30,12 +30,13 @@ export class SalesService {
     const toIdx = monthIndex(to) + 1;
     const toExclusive = new Date(Date.UTC(Math.floor(toIdx / 12), toIdx % 12, 1));
 
-    const org = await this.prisma.organization.findUniqueOrThrow({
+    // Row-level security: both queries run in the caller's tenant context.
+    const { org, rows } = await this.tenantDb.run(access, async (tx) => ({
+    org: await tx.organization.findUniqueOrThrow({
       where: { id: access.organizationId },
       select: { dataClassification: true },
-    });
-
-    const rows = await this.prisma.$queryRaw<
+    }),
+    rows: await tx.$queryRaw<
       { month: string; currency: string; unit: string; net: string; lines: number; qty: string }[]
     >`
       SELECT to_char(t.billing_date, 'YYYY-MM') AS month,
@@ -52,7 +53,8 @@ export class SalesService {
         AND t.billing_date >= ${fromDate}::date
         AND t.billing_date < ${toExclusive}::date
       GROUP BY 1, 2, 3
-      ORDER BY 1, 2, 3`;
+      ORDER BY 1, 2, 3`,
+    }));
 
     const grouped = new Map<string, { row: MonthlySalesRowDto; net: Decimal }>();
     for (const r of rows) {

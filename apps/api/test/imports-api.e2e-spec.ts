@@ -1,3 +1,4 @@
+import { fixtureDb } from './helpers.js';
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -24,7 +25,7 @@ describe('Import HTTP API (/v1/imports)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    prisma = app.get(PrismaService);
+    prisma = fixtureDb(app);
     t = await createTenant(prisma);
     other = await createTenant(prisma);
     tokens.owner = (await loginAs(app, t.ownerId)).accessToken;

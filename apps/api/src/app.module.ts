@@ -9,16 +9,20 @@ import { validateEnv, type Env } from './config/env.js';
 import { HealthController } from './health/health.controller.js';
 import { ImportsModule } from './imports/imports.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
+import { PostgresThrottlerStorage } from './security/postgres-throttler.storage.js';
+import { PrismaService } from './prisma/prisma.service.js';
 import { SalesModule } from './sales/sales.module.js';
 
 @Module({
   imports: [
     // Loads .env (real environment variables take precedence) and validates it at startup.
     ConfigModule.forRoot({ isGlobal: true, validate: validateEnv }),
-    // Per-client-IP rate limits, kept in memory (single API instance in this phase).
+    // Shared PostgreSQL counters.
     ThrottlerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService<Env, true>) => ({
+      imports: [PrismaModule],
+      inject: [ConfigService, PrismaService],
+      useFactory: (config: ConfigService<Env, true>, prisma: PrismaService) => ({
+        storage: new PostgresThrottlerStorage(prisma),
         throttlers: [
           { name: 'default', ttl: 60_000, limit: config.get('RATE_LIMIT_DEFAULT_PER_MINUTE', { infer: true }) },
           {

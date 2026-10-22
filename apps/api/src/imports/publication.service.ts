@@ -1,7 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service.js';
 import { OrganizationAccessService } from '../auth/organization-access.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
 
 export class PublicationBlockedException extends ConflictException {}
 
@@ -12,14 +12,17 @@ export class PublicationBlockedException extends ConflictException {}
 @Injectable()
 export class PublicationService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly tenantDb: TenantDb,
     private readonly access: OrganizationAccessService,
     private readonly audit: AuditService,
   ) {}
 
   async publish(organizationId: string, batchId: string, actorUserId: string) {
     await this.access.require(actorUserId, organizationId, ['OWNER']);
-    const batch = await this.prisma.importBatch.findFirst({ where: { id: batchId, organizationId } });
+    const tenant = { organizationId, userId: actorUserId };
+    const batch = await this.tenantDb.run(tenant, (tx) =>
+      tx.importBatch.findFirst({ where: { id: batchId, organizationId } }),
+    );
     if (!batch) throw new NotFoundException('Import batch not found');
     if (batch.status === 'PUBLISHED') return batch;
 
@@ -33,7 +36,7 @@ export class PublicationService {
       );
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return this.tenantDb.run(tenant, async (tx) => {
       // Conditional update: succeeds only if nobody changed the batch in the meantime.
       const res = await tx.importBatch.updateMany({
         where: { id: batch.id, organizationId, status: 'READY_TO_PUBLISH', reconciliationStatus: 'PASSED' },

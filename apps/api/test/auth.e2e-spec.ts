@@ -1,3 +1,4 @@
+import { fixtureDb } from './helpers.js';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AuthService } from '../src/auth/auth.service.js';
@@ -15,7 +16,7 @@ describe('Authentication (/v1/auth)', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    prisma = app.get(PrismaService);
+    prisma = fixtureDb(app);
     t = await createTenant(prisma);
   });
   afterAll(async () => {

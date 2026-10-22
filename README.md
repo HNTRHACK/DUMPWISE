@@ -115,7 +115,7 @@ Start-Process http://127.0.0.1:3001/docs      # Swagger UI (development only)
 
 npm run verify          # lint + typecheck + build + unit tests + e2e tests
 npm test                # unit tests only (no database)
-npm run test:e2e        # database tests (uses the separate dumpwise_test database)
+npm run test:e2e        # database tests (creates a new disposable database and roles; no resets)
 npm run db:migrate:dev  # after editing prisma/schema.prisma: create + apply a migration
 npm run openapi:export  # regenerate docs/openapi.json (after npm run build)
 ```

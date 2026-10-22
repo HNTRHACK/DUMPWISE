@@ -9,7 +9,7 @@ import {
   ApiTooManyRequestsResponse,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
 import { ChangePasswordDto, LoginDto, MeDto, RefreshDto, TokenPairDto } from './auth.dto.js';
 import { AuthRateLimited } from './auth-rate-limit.js';
 import { AuthService } from './auth.service.js';
@@ -21,7 +21,7 @@ import { AuthenticatedGuard, CurrentPrincipal } from './organization-access.guar
 export class AuthController {
   constructor(
     private readonly auth: AuthService,
-    private readonly prisma: PrismaService,
+    private readonly tenantDb: TenantDb,
   ) {}
 
   @Post('login')
@@ -80,7 +80,8 @@ export class AuthController {
   @ApiOkResponse({ type: MeDto })
   @ApiUnauthorizedResponse()
   async me(@CurrentPrincipal() principal: AuthenticatedPrincipal): Promise<MeDto> {
-    const user = await this.prisma.user.findUniqueOrThrow({
+    // User-only tenant context: row-level security returns exactly this user's memberships.
+    const user = await this.tenantDb.run({ userId: principal.userId }, (tx) => tx.user.findUniqueOrThrow({
       where: { id: principal.userId },
       select: {
         id: true,
@@ -91,7 +92,7 @@ export class AuthController {
           orderBy: { organization: { name: 'asc' } },
         },
       },
-    });
+    }));
     return {
       id: user.id,
       email: user.email,

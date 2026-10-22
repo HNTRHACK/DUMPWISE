@@ -1,3 +1,4 @@
+import { fixtureDb } from './helpers.js';
 import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -33,7 +34,7 @@ describe('GET /v1/sales/monthly', () => {
 
   beforeAll(async () => {
     app = await createTestApp();
-    prisma = app.get(PrismaService);
+    prisma = fixtureDb(app);
     a = await createTenant(prisma);
     b = await createTenant(prisma);
     await seedPublished(app, a, '1111.11');
