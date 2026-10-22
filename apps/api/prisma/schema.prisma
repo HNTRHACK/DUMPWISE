@@ -1,0 +1,261 @@
+// DUMPWISE Phase 1 schema.
+//
+// Tenancy rule: every business row carries organization_id. Child tables reference
+// parents through composite foreign keys (organization_id, id), so the database itself
+// refuses to link a row of one organization to a row of another.
+//
+// SAP business identifiers (billing document, item, material, customer numbers) are
+// stored as strings: they contain leading zeros that must never be lost.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum DataClassification {
+  SYNTHETIC
+  PRODUCTION
+}
+
+enum MembershipRole {
+  OWNER // may publish batches
+  ANALYST // may import batches and read data
+  VIEWER // may read published data
+}
+
+enum ImportStatus {
+  PROCESSING
+  FAILED_VALIDATION
+  RECONCILIATION_FAILED
+  READY_TO_PUBLISH
+  PUBLISHED
+}
+
+enum ReconciliationStatus {
+  NOT_RUN
+  PASSED
+  FAILED
+}
+
+enum ReconciliationMetric {
+  NET_AMOUNT
+  LINE_COUNT
+  QUANTITY
+}
+
+// Supported SAP SD billing types. Sign rules are documented in docs/ARCHITECTURE.md.
+enum BillingType {
+  F2 // invoice
+  G2 // credit memo (value-only)
+  RE // returns credit
+  S1 // cancellation of invoice
+}
+
+model Organization {
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name               String             @db.VarChar(200)
+  slug               String             @unique @db.VarChar(80)
+  dataClassification DataClassification @map("data_classification")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships           Membership[]
+  importBatches         ImportBatch[]
+  products              Product[]
+  distributors          Distributor[]
+  customers             Customer[]
+  salesTransactions     SalesTransaction[]
+  reconciliationResults ReconciliationResult[]
+  auditEvents           AuditEvent[]
+
+  @@map("organizations")
+}
+
+model User {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email       String   @unique @db.VarChar(254) // stored lower-case
+  displayName String   @map("display_name") @db.VarChar(120)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships Membership[]
+  auditEvents AuditEvent[]
+
+  @@map("users")
+}
+
+model Membership {
+  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String         @map("organization_id") @db.Uuid
+  userId         String         @map("user_id") @db.Uuid
+  role           MembershipRole
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model ImportBatch {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String               @map("organization_id") @db.Uuid
+  sourceType           String               @default("SAP_BILLING_CSV") @map("source_type") @db.VarChar(40)
+  fileName             String               @map("file_name") @db.VarChar(255)
+  fileSha256           String               @map("file_sha256") @db.Char(64)
+  fileSizeBytes        Int                  @map("file_size_bytes")
+  isSynthetic          Boolean              @map("is_synthetic")
+  status               ImportStatus
+  reconciliationStatus ReconciliationStatus @default(NOT_RUN) @map("reconciliation_status")
+  rowsTotal            Int                  @default(0) @map("rows_total")
+  rowsValid            Int                  @default(0) @map("rows_valid")
+  rowsInvalid          Int                  @default(0) @map("rows_invalid")
+  rowsDuplicateInFile  Int                  @default(0) @map("rows_duplicate_in_file")
+  rowsAlreadyImported  Int                  @default(0) @map("rows_already_imported")
+  rowsInserted         Int                  @default(0) @map("rows_inserted")
+  // Capped list of row/file issues: [{ row, field, code, message }]
+  issues               Json                 @default("[]")
+  createdByUserId      String?              @map("created_by_user_id") @db.Uuid
+  publishedByUserId    String?              @map("published_by_user_id") @db.Uuid
+  publishedAt          DateTime?            @map("published_at") @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  salesTransactions     SalesTransaction[]
+  reconciliationResults ReconciliationResult[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status])
+  @@index([organizationId, fileSha256])
+  @@map("import_batches")
+}
+
+model Product {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  sku            String   @db.VarChar(40) // SAP MATNR
+  description    String?  @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  salesTransactions SalesTransaction[]
+
+  @@unique([organizationId, sku])
+  @@unique([organizationId, id])
+  @@map("products")
+}
+
+model Distributor {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String   @db.VarChar(20) // SAP sold-to party (KUNAG)
+  name           String?  @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  salesTransactions SalesTransaction[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, id])
+  @@map("distributors")
+}
+
+model Customer {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  code           String   @db.VarChar(20) // SAP ship-to party (KUNWE), the end customer reference
+  name           String?  @db.VarChar(200)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  salesTransactions SalesTransaction[]
+
+  @@unique([organizationId, code])
+  @@unique([organizationId, id])
+  @@map("customers")
+}
+
+// One row per SAP billing document item. quantity and net_amount are stored SIGNED
+// (credit memos, returns and cancellations are negative) after applying the documented
+// billing-type rules.
+model SalesTransaction {
+  id                       String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String      @map("organization_id") @db.Uuid
+  importBatchId            String      @map("import_batch_id") @db.Uuid
+  billingDocument          String      @map("billing_document") @db.VarChar(20) // VBELN
+  billingItem              String      @map("billing_item") @db.VarChar(10) // POSNR
+  billingType              BillingType @map("billing_type")
+  billingDate              DateTime    @map("billing_date") @db.Date
+  cancelledBillingDocument String?     @map("cancelled_billing_document") @db.VarChar(20)
+  distributorId            String      @map("distributor_id") @db.Uuid
+  productId                String      @map("product_id") @db.Uuid
+  customerId               String      @map("customer_id") @db.Uuid
+  quantity                 Decimal     @db.Decimal(18, 3)
+  salesUnit                String      @map("sales_unit") @db.VarChar(10)
+  netAmount                Decimal     @map("net_amount") @db.Decimal(18, 2)
+  currency                 String      @db.Char(3)
+  contentHash              String      @map("content_hash") @db.Char(64)
+  sourceRowNumber          Int         @map("source_row_number")
+  createdAt                DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  importBatch  ImportBatch  @relation(fields: [organizationId, importBatchId], references: [organizationId, id], onDelete: Restrict)
+  distributor  Distributor  @relation(fields: [organizationId, distributorId], references: [organizationId, id], onDelete: Restrict)
+  product      Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  customer     Customer     @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: Restrict)
+
+  // SAP business key (VBRP primary key within one SAP client).
+  @@unique([organizationId, billingDocument, billingItem])
+  @@index([organizationId, billingDate])
+  @@index([organizationId, importBatchId])
+  @@index([organizationId, distributorId])
+  @@index([organizationId, productId])
+  @@index([organizationId, customerId])
+  @@map("sales_transactions")
+}
+
+// One row per check performed when reconciling a batch against control totals.
+model ReconciliationResult {
+  id             String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String               @map("organization_id") @db.Uuid
+  importBatchId  String               @map("import_batch_id") @db.Uuid
+  metric         ReconciliationMetric
+  month          String               @db.Char(7) // YYYY-MM
+  currency       String?              @db.Char(3)
+  unit           String?              @db.VarChar(10)
+  expectedValue  Decimal              @map("expected_value") @db.Decimal(20, 3)
+  actualValue    Decimal              @map("actual_value") @db.Decimal(20, 3)
+  passed         Boolean
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  importBatch  ImportBatch  @relation(fields: [organizationId, importBatchId], references: [organizationId, id], onDelete: Restrict)
+
+  @@index([organizationId, importBatchId])
+  @@map("reconciliation_results")
+}
+
+// Append-only: the runtime DB role is granted INSERT and SELECT only.
+model AuditEvent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  action         String   @db.VarChar(80)
+  entityType     String   @map("entity_type") @db.VarChar(80)
+  entityId       String?  @map("entity_id") @db.Uuid
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_events")
+}

@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+.venv/
+__pycache__/
+coverage/
+*.tsbuildinfo
+# Generated Prisma client (re-created by `npm install` / `npx prisma generate`)
+apps/api/src/generated/
+# Never commit real SAP exports. Only data/synthetic/ is allowed.
+*.xlsx
+*.xls
+*.xlsm

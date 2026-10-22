@@ -1,0 +1,237 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "HealthController_check",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Service and database are up",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseDto"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Database unreachable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/sales/monthly": {
+      "get": {
+        "operationId": "SalesController_monthly",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First month (inclusive), YYYY-MM",
+            "schema": {
+              "example": "2025-10",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last month (inclusive), YYYY-MM",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MonthlySalesResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query or missing X-Organization-Id header"
+          },
+          "401": {
+            "description": "Not authenticated. In Phase 1 no identity provider is configured, so all requests receive 401."
+          },
+          "403": {
+            "description": "Caller is not a member of the organization"
+          }
+        },
+        "summary": "Monthly net sales from published, reconciled import batches",
+        "tags": [
+          "sales"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "DUMPWISE API",
+    "description": "Phase 1 API. Only implemented endpoints are documented. Protected endpoints require authentication, which is not yet integrated: they currently return 401 to every caller.",
+    "version": "0.1.0",
+    "contact": {}
+  },
+  "tags": [],
+  "servers": [],
+  "components": {
+    "schemas": {
+      "HealthChecksDto": {
+        "type": "object",
+        "properties": {
+          "database": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          }
+        },
+        "required": [
+          "database"
+        ]
+      },
+      "HealthResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "example": "ok"
+          },
+          "service": {
+            "type": "string",
+            "example": "dumpwise-api"
+          },
+          "timestamp": {
+            "type": "string",
+            "example": "2026-10-23T10:00:00.000Z",
+            "format": "date-time"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/HealthChecksDto"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "timestamp",
+          "checks"
+        ]
+      },
+      "UnitsSoldDto": {
+        "type": "object",
+        "properties": {
+          "unit": {
+            "type": "string",
+            "example": "EA"
+          },
+          "quantity": {
+            "type": "string",
+            "example": "1520.000",
+            "description": "Signed net units (returns/cancellations subtracted)"
+          }
+        },
+        "required": [
+          "unit",
+          "quantity"
+        ]
+      },
+      "MonthlySalesRowDto": {
+        "type": "object",
+        "properties": {
+          "month": {
+            "type": "string",
+            "example": "2026-09"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "totalNetSales": {
+            "type": "string",
+            "example": "49445993.81",
+            "description": "Net sales after credit memos, returns and cancellations. Decimal string."
+          },
+          "transactionCount": {
+            "type": "number",
+            "example": 192,
+            "description": "Number of billing line items (invoices, credits, returns, cancellations)"
+          },
+          "unitsSold": {
+            "description": "Units are reported per sales unit; different units are never added together",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnitsSoldDto"
+            }
+          }
+        },
+        "required": [
+          "month",
+          "currency",
+          "totalNetSales",
+          "transactionCount",
+          "unitsSold"
+        ]
+      },
+      "MonthlySalesResponseDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dataClassification": {
+            "type": "string",
+            "enum": [
+              "SYNTHETIC",
+              "PRODUCTION"
+            ]
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlySalesRowDto"
+            }
+          }
+        },
+        "required": [
+          "organizationId",
+          "dataClassification",
+          "months"
+        ]
+      }
+    }
+  }
+}
