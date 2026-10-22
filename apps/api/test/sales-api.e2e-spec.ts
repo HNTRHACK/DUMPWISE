@@ -4,7 +4,7 @@ import request from 'supertest';
 import { ImportPipelineService } from '../src/imports/import-pipeline.service.js';
 import { PublicationService } from '../src/imports/publication.service.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
-import { controlTotals, createTenant, createTestApp, csvOf, type Tenant } from './helpers.js';
+import { controlTotals, createTenant, createTestApp, csvOf, loginAs, type Tenant } from './helpers.js';
 
 async function seedPublished(app: INestApplication, t: Tenant, amount: string) {
   const r = await app.get(ImportPipelineService).importBillingCsv({
@@ -21,86 +21,82 @@ async function seedPublished(app: INestApplication, t: Tenant, amount: string) {
   await app.get(PublicationService).publish(t.organizationId, r.batchId, t.ownerId);
 }
 
-describe('GET /v1/sales/monthly — as deployed (no identity provider)', () => {
-  let app: INestApplication;
-  beforeAll(async () => {
-    app = await createTestApp({ testAuth: false });
-  });
-  afterAll(async () => {
-    await app.close();
-  });
-
-  it('rejects every caller with 401, even one presenting the test header', async () => {
-    const t = await createTenant(app.get(PrismaService));
-    const res = await request(app.getHttpServer())
-      .get('/v1/sales/monthly')
-      .set('x-test-user-id', t.ownerId)
-      .set('x-organization-id', t.organizationId)
-      .expect(401);
-    expect(res.body).toMatchObject({ statusCode: 401, message: 'Authentication required' });
-  });
-});
-
-describe('GET /v1/sales/monthly — isolated test harness', () => {
+describe('GET /v1/sales/monthly', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let a: Tenant;
   let b: Tenant;
+  let tokenA: string; // VIEWER of A
+  let ownerTokenA: string; // OWNER of A
+  let tokenB: string; // VIEWER of B
   const get = () => request(app.getHttpServer()).get('/v1/sales/monthly');
 
   beforeAll(async () => {
-    app = await createTestApp({ testAuth: true });
+    app = await createTestApp();
     prisma = app.get(PrismaService);
     a = await createTenant(prisma);
     b = await createTenant(prisma);
     await seedPublished(app, a, '1111.11');
     await seedPublished(app, b, '2222.22');
+    tokenA = (await loginAs(app, a.viewerId)).accessToken;
+    ownerTokenA = (await loginAs(app, a.ownerId)).accessToken;
+    tokenB = (await loginAs(app, b.viewerId)).accessToken;
   });
   afterAll(async () => {
     await app.close();
   });
 
   describe('unauthorized access', () => {
-    it('401 without credentials', async () => {
-      await get().set('x-organization-id', a.organizationId).expect(401);
+    it('401 without a token, with WWW-Authenticate', async () => {
+      const res = await get().set('x-organization-id', a.organizationId).expect(401);
+      expect(res.headers['www-authenticate']).toBe('Bearer realm="dumpwise"');
+      expect(res.body).toMatchObject({ statusCode: 401, message: 'Authentication required' });
+    });
+    it('401 for a malformed, random or wrong-type token', async () => {
+      for (const auth of ['Bearer nope', `Bearer dwa_${'A'.repeat(43)}`, 'Basic dXNlcjpwYXNz', `Bearer dwr_${'A'.repeat(43)}`]) {
+        await get().set('authorization', auth).set('x-organization-id', a.organizationId).expect(401);
+      }
     });
     it('400 without a valid organization header', async () => {
-      await get().set('x-test-user-id', a.ownerId).expect(400);
-      await get().set('x-test-user-id', a.ownerId).set('x-organization-id', 'not-a-uuid').expect(400);
+      await get().auth(tokenA, { type: 'bearer' }).expect(400);
+      await get().auth(tokenA, { type: 'bearer' }).set('x-organization-id', 'not-a-uuid').expect(400);
     });
-    it('403 for an unknown user or an organization that does not exist', async () => {
-      await get().set('x-test-user-id', randomUUID()).set('x-organization-id', a.organizationId).expect(403);
-      await get().set('x-test-user-id', a.ownerId).set('x-organization-id', randomUUID()).expect(403);
+    it('403 for an organization that does not exist', async () => {
+      await get().auth(tokenA, { type: 'bearer' }).set('x-organization-id', randomUUID()).expect(403);
     });
     it('400 for invalid or unexpected query parameters', async () => {
-      const auth = (r: request.Test) => r.set('x-test-user-id', a.viewerId).set('x-organization-id', a.organizationId);
-      await auth(get().query({ from: '2026-13' })).expect(400);
-      await auth(get().query({ from: '2026-09', to: '2026-01' })).expect(400);
-      await auth(get().query({ organizationId: b.organizationId })).expect(400);
+      const authed = (r: request.Test) => r.auth(tokenA, { type: 'bearer' }).set('x-organization-id', a.organizationId);
+      await authed(get().query({ from: '2026-13' })).expect(400);
+      await authed(get().query({ from: '2026-09', to: '2026-01' })).expect(400);
+      await authed(get().query({ organizationId: b.organizationId })).expect(400);
     });
   });
 
   describe('cross-tenant isolation', () => {
-    it('a member of A cannot read B', async () => {
-      const res = await get().set('x-test-user-id', a.ownerId).set('x-organization-id', b.organizationId).expect(403);
-      expect(JSON.stringify(res.body)).not.toContain('2222.22');
+    it('a member of A cannot read B (even an OWNER of A)', async () => {
+      for (const token of [tokenA, ownerTokenA]) {
+        const res = await get().auth(token, { type: 'bearer' }).set('x-organization-id', b.organizationId).expect(403);
+        expect(JSON.stringify(res.body)).not.toContain('2222.22');
+      }
     });
 
     it('each organization sees only its own totals', async () => {
-      const resA = await get().set('x-test-user-id', a.viewerId).set('x-organization-id', a.organizationId).expect(200);
+      const resA = await get().auth(tokenA, { type: 'bearer' }).set('x-organization-id', a.organizationId).expect(200);
       expect(resA.body).toEqual({
         organizationId: a.organizationId,
         dataClassification: 'SYNTHETIC',
         months: [{ month: '2026-09', currency: 'INR', totalNetSales: '1111.11', transactionCount: 1, unitsSold: [{ unit: 'EA', quantity: '3.000' }] }],
       });
-      const resB = await get().set('x-test-user-id', b.viewerId).set('x-organization-id', b.organizationId).expect(200);
+      const resB = await get().auth(tokenB, { type: 'bearer' }).set('x-organization-id', b.organizationId).expect(200);
       expect(resB.body.months[0].totalNetSales).toBe('2222.22');
     });
 
     it('a user who belongs to both gets each organization separately', async () => {
       await prisma.membership.create({ data: { organizationId: b.organizationId, userId: a.viewerId, role: 'VIEWER' } });
-      const resB = await get().set('x-test-user-id', a.viewerId).set('x-organization-id', b.organizationId).expect(200);
+      const resB = await get().auth(tokenA, { type: 'bearer' }).set('x-organization-id', b.organizationId).expect(200);
       expect(resB.body.months[0].totalNetSales).toBe('2222.22');
+      const resA = await get().auth(tokenA, { type: 'bearer' }).set('x-organization-id', a.organizationId).expect(200);
+      expect(resA.body.months[0].totalNetSales).toBe('1111.11');
     });
 
     it('the database refuses to link a transaction to another organization\'s product', async () => {

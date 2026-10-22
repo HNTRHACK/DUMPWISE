@@ -3,7 +3,8 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 export interface AuditInput {
-  organizationId: string;
+  /** null for user-level security events (login, logout, password change). */
+  organizationId: string | null;
   actorUserId: string | null;
   action: string;
   entityType: string;

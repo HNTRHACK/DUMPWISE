@@ -14,7 +14,7 @@ describe('Import pipeline (database)', () => {
   let sales: SalesService;
 
   beforeAll(async () => {
-    app = await createTestApp({ testAuth: false });
+    app = await createTestApp();
     prisma = app.get(PrismaService);
     pipeline = app.get(ImportPipelineService);
     publication = app.get(PublicationService);

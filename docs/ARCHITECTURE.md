@@ -7,7 +7,7 @@
  HTTP client ──► │ ValidationPipe → OrganizationAccessGuard → Controller → Service    │
  (127.0.0.1)     │        │                    │                                       │
                  │  AllExceptionsFilter   Authenticator (DI token)                     │
-                 │                        └ DisabledAuthenticator (Phase 1: always 401)│
+                 │                        └ BearerSessionAuthenticator (auth_sessions) │
  Operator CLI ─► │ NestFactory.createApplicationContext → same services, same rules   │
                  │                                                                     │
                  │ PrismaService (runtime role dumpwise_app) ──────────────┐           │
@@ -21,9 +21,10 @@
 |---|---|
 | `ConfigModule` + `config/env.ts` | Loads `.env`, validates every variable with zod, refuses to start on bad config |
 | `PrismaModule` | One shared database client using the restricted runtime role |
-| `AuthModule` | `Authenticator` interface (who are you?) and `OrganizationAccessService`/guard (may you act on this organization?) |
+| `AuthModule` | Login/sessions (`AuthService`, `/v1/auth/*`), `Authenticator` (who are you?), `OrganizationAccessService` + guards (may you act on this organization?) |
+| `ThrottlerModule` | Per-IP rate limits (global + strict limit on credential routes) |
 | `AuditModule` | Append-only audit events |
-| `ImportsModule` | Import pipeline + publication (no HTTP controller in Phase 1) |
+| `ImportsModule` | Import pipeline + publication, HTTP controller `/v1/imports` |
 | `SalesModule` | `GET /v1/sales/monthly` |
 | `HealthController` | `GET /health` |
 | `cli/dumpwise.ts` | Operator commands: `seed-synthetic`, `import`, `publish`, `monthly`, `openapi` |
@@ -145,14 +146,53 @@ Analysts can import but cannot publish (separation of duties).
 
 ## Authentication vs. authorization
 
-- **Authentication** (`Authenticator` interface, DI token `AUTHENTICATOR`) identifies the caller. Phase 1 binds `DisabledAuthenticator`, which identifies nobody, so all protected routes return 401. The e2e tests override the binding with `TestHeaderAuthenticator`, which lives in `test/` and is not part of the build.
-- **Authorization** (`OrganizationAccessService`) is real. It reads the `Membership` row for (user, organization) from the database and checks the role. Services receive an `OrganizationAccess` object and use *its* `organizationId` in every query.
+```
+Request ─► ThrottlerGuard (global; strict "auth" limit on @AuthRateLimited routes)
+        ─► AuthenticatedGuard / OrganizationAccessGuard
+              1. Authenticator (DI token AUTHENTICATOR → BearerSessionAuthenticator)
+                   "Authorization: Bearer dwa_…" → SHA-256 → auth_sessions row
+                   live = not revoked, access not expired, session not expired, user not disabled
+                   → 401 otherwise
+              2. X-Organization-Id (UUID)                       → 400 otherwise
+              3. Membership(user, org) + @RequireRoles(...)       → 403 otherwise
+        ─► Controller → Service (re-checks roles; queries filtered by verified organizationId)
+```
+
+- **Authentication** (`src/auth/auth.service.ts`): login, refresh rotation with reuse detection, logout, change password and operator reset. The `Authenticator` interface stays, so an OIDC/JWT authenticator can be bound later without touching authorization.
+- **Authorization** (`OrganizationAccessService`) reads the `Membership` row for (user, organization) and checks the role. Services receive an `OrganizationAccess` object and use *its* `organizationId` in every query.
+
+### Session model
+
+| Item | Lifetime | Stored as |
+|---|---|---|
+| Access token `dwa_…` | 15 min (`AUTH_ACCESS_TOKEN_TTL_SECONDS`) | SHA-256 in `auth_sessions.access_token_hash` |
+| Refresh token `dwr_…` | Single use; valid until the session ends | SHA-256 in `refresh_token_hash`; the previous one is kept in `previous_refresh_token_hash` for reuse detection |
+| Session | 7 days absolute (`AUTH_SESSION_TTL_SECONDS`); refresh never extends it | `auth_sessions.expires_at`; ended early by `revoked_at` |
+
+Why opaque tokens instead of JWTs: a single API both issues and checks the tokens, and it
+needs **instant revocation** (logout, password change, disabled user). Opaque tokens
+need no signing key to manage or leak, and cannot suffer JWT algorithm-confusion bugs. The
+cost is one indexed lookup per request.
+
+## HTTP API surface (Phase 2a)
+
+| Route | Guard | Roles |
+|---|---|---|
+| `GET /health` | — | public |
+| `POST /v1/auth/login`, `/refresh` | rate limit | public |
+| `POST /v1/auth/logout`, `/change-password`, `GET /v1/auth/me` | AuthenticatedGuard | any user |
+| `POST /v1/imports` | OrganizationAccessGuard | OWNER, ANALYST |
+| `GET /v1/imports`, `GET /v1/imports/:id`, `GET /v1/sales/monthly` | OrganizationAccessGuard | any member |
+| `POST /v1/imports/:id/publish` | OrganizationAccessGuard | OWNER |
+
+The import controller is a thin HTTP adapter: it validates the multipart request and calls
+the **unchanged** `ImportPipelineService` and `PublicationService`.
 
 ## Key decisions
 
 | Decision | Why |
 |---|---|
-| Imports via CLI, not HTTP | No upload endpoint should exist before real authentication |
+| Imports via CLI in Phase 1; HTTP since Phase 2a | No upload endpoint existed before real authentication |
 | Generator in Python, pipeline in TypeScript | Reconciliation only proves something if expected totals come from an independent implementation |
 | Roll back rows on failed reconciliation | Unpublishable rows would otherwise block a corrected re-import (unique key) |
 | Money as `DECIMAL(18,2)` and JSON strings | Floating point cannot represent ₹0.10 exactly |

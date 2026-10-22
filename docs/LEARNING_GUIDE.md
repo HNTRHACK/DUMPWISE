@@ -232,3 +232,117 @@ and watch it fail.
 **F. Interview**
 1. *Unit vs. integration tests: when do you use which?* Unit tests for logic with many cases (date parsing), because they are fast and precise. Integration tests for wiring and contracts (SQL, guards, transactions), where mocks would hide real bugs.
 2. *How do you keep database tests reliable?* Use a dedicated test database, migrate it the same way as production, give each test unique data or clean deterministically, avoid order dependence, and run files serially when they share state.
+
+---
+
+# Phase 2a — Authentication, authorization and protected APIs
+
+## Step 9 — Password storage
+
+**A.** Users log in with e-mail and password. We never store the password: we store a
+**scrypt** hash with a random salt, in the form `scrypt$16$8$2$<salt>$<hash>`.
+
+**B.** If the database ever leaks, attackers must not get working passwords. Many people
+reuse passwords across systems, including their SAP login.
+
+**C.** `src/auth/password-hasher.ts`, `src/auth/password-hasher.spec.ts`
+
+**D. Concepts**
+- **Hash vs. encryption.** Encryption can be reversed with a key. A hash cannot be reversed: to check a password you hash the attempt and compare.
+- **Salt.** Random bytes mixed in, so two users with the same password get different hashes and precomputed "rainbow tables" are useless.
+- **Slow, memory-hard hashing.** scrypt deliberately uses ~64 MiB of memory and ~0.2 s per guess. That's harmless for one login and ruinous for someone trying billions of guesses on GPUs. Never use plain SHA-256 for passwords.
+- **Constant-time comparison** (`timingSafeEqual`). It doesn't stop early at the first wrong byte, so timing reveals nothing.
+- **Unicode normalization (NFKC).** "café" can be typed as one character or as "e" plus an accent; both must log in.
+
+**E. Exercise.** In `password-hasher.spec.ts`, write a test proving that the *same* password
+hashed twice verifies against *both* hashes, even though the hashes differ.
+
+**F. Interview**
+1. *Why not hash passwords with SHA-256?* It is designed to be fast, billions per second on a GPU, so leaked hashes of human passwords are cracked quickly. Password hashing needs a deliberately slow, salted, preferably memory-hard function: scrypt, Argon2id or bcrypt.
+2. *What is a salt and why must it be unique per password?* Random data hashed together with the password. A unique salt means identical passwords produce different hashes, so an attacker must attack every hash separately and precomputed tables don't work.
+
+---
+
+## Step 10 — Sessions and tokens
+
+**A.** Login creates a row in `auth_sessions` and returns two random tokens. The **access
+token** (15 minutes) goes in `Authorization: Bearer …` on every request. The **refresh
+token** gets a new pair when the access token expires. Only SHA-256 hashes of the tokens
+are stored.
+
+**B.** Users must stay logged in for a working day without re-typing passwords, and an
+administrator must be able to cut off a stolen laptop **immediately**.
+
+**C.** `src/auth/tokens.ts`, `src/auth/auth.service.ts` (`login`, `refresh`,
+`authenticateAccessToken`), `src/auth/authenticator.ts`, `test/auth.e2e-spec.ts`
+
+**D. Concepts**
+- **Stateful sessions vs. stateless JWTs.** A JWT carries signed claims and the server trusts it until it expires, so revoking it needs extra machinery. Our opaque tokens are looked up in the database on every request: one indexed query, but logout, password change and account disable work instantly.
+- **Short-lived access, longer-lived refresh.** A leaked access token is only useful for minutes.
+- **Refresh rotation and reuse detection.** Each refresh token works exactly once. If an old one shows up again, two parties hold copies (one is a thief), so we revoke the whole session.
+- **Why a fast hash is fine for tokens.** They have 256 bits of randomness. Unlike human passwords, there is nothing to guess.
+- **Bearer header vs. cookies.** Headers are not sent automatically by browsers, so CSRF doesn't apply. The frontend must still protect tokens from XSS.
+
+**E. Exercise.** Add `GET /v1/auth/sessions` that lists the current user's *active* sessions
+(id, createdAt, lastRefreshedAt, expiresAt; never hashes). Add an e2e test that logging in
+twice shows two sessions and that logout leaves one.
+
+**F. Interview**
+1. *Access token vs. refresh token?* The access token is short-lived and sent on every API call. The refresh token is longer-lived, used only at the token endpoint to obtain new access tokens, and so exposed far less often.
+2. *How do you revoke a JWT before it expires?* You can't with the token alone. Options are short lifetimes plus refresh, a server-side denylist of token ids, or switching to server-side sessions (what we did) where revocation is a database update.
+
+---
+
+## Step 11 — Guards, decorators and role-based authorization
+
+**A.** `OrganizationAccessGuard` runs before every organization-scoped controller method.
+It authenticates (401), reads `X-Organization-Id` (400), and checks the membership plus
+any `@RequireRoles('OWNER')` on the route (403).
+
+**B.** Separation of duties: an analyst can load data, but only an owner can publish numbers
+management will see. One company must never see another's figures.
+
+**C.** `src/auth/organization-access.guard.ts`, `src/auth/organization-access.service.ts`,
+`src/imports/imports.controller.ts`
+
+**D. Concepts**
+- **Guard.** A Nest class with `canActivate()`. If it throws or returns false, the controller never runs.
+- **Metadata and `Reflector`.** `@RequireRoles(...)` attaches data to a method (`SetMetadata`). The guard reads it back with `reflector.getAllAndOverride`. This is how decorators "configure" generic code.
+- **RBAC (role-based access control).** Permissions belong to roles; users get roles *per organization* through `memberships`.
+- **Defense in depth.** The services check roles again, so the CLI and future callers can't bypass the guard.
+- **401 vs. 403 vs. 404.** Unknown caller, known but not allowed, and "doesn't exist *for you*". Answering 404 for another tenant's batch avoids confirming that it exists.
+
+**E. Exercise.** Make `GET /v1/imports/:batchId` hide the `issues` array from VIEWERs (they
+see the summary and reconciliation only). Test both roles.
+
+**F. Interview**
+1. *Where should authorization be enforced?* On the server, as close to the data as practical, and consistently. Here that's the guard at the HTTP edge, the role check in services, and tenant filters in every query (plus database constraints). Never rely on the frontend hiding buttons.
+2. *What is an IDOR vulnerability?* Insecure Direct Object Reference: the server trusts an id from the client without checking that the caller may access that object. For example, `/imports/<someone else's id>`. We prevent it by always querying with `id AND organization_id`, and we have a test for it.
+
+---
+
+## Step 12 — Protecting the API surface
+
+**A.** Rate limits (10 login attempts per minute per IP), account lockout, security headers
+(helmet), streaming upload limits, `Cache-Control: no-store` on token responses, and HTTP
+endpoints for upload and publish built on the unchanged pipeline.
+
+**B.** Once a login endpoint exists, bots *will* try passwords. Upload endpoints are a classic
+path for memory exhaustion and malicious files.
+
+**C.** `src/app.module.ts` (ThrottlerModule), `src/auth/auth-rate-limit.ts`, `src/app.setup.ts`
+(helmet), `src/imports/imports.module.ts` (multer limits), `test/rate-limit.e2e-spec.ts`
+
+**D. Concepts**
+- **Rate limiting vs. lockout.** Rate limiting slows one *client*. Lockout protects one *account* from many clients. Both have trade-offs: lockout can be abused to annoy a user.
+- **multipart/form-data.** The HTTP encoding for file uploads. Limits must apply *while streaming* so a 5 GB upload is cut off early.
+- **Security headers.** CSP limits where scripts may come from; `nosniff` stops MIME guessing; `X-Frame-Options` blocks clickjacking; HSTS forces HTTPS (only meaningful once HTTPS exists, which is why it is production-only).
+- **HTTP 429 Too Many Requests**, plus `Retry-After` headers.
+
+**E. Exercise.** Write an e2e test (in its own file, like `rate-limit.e2e-spec.ts`, setting a
+small `IMPORT_MAX_BYTES` before importing the app) that uploads a file just over the limit.
+Check which status code multer produces, and explain why.
+
+**F. Interview**
+1. *Why is in-memory rate limiting insufficient for production?* Each instance counts separately and the counters vanish on restart. Behind a load balancer you need shared storage such as Redis, and behind a proxy you must use the real client IP (trusted `X-Forwarded-For`).
+2. *Why return the same error for "unknown e-mail" and "wrong password"?* Distinct messages, or distinct timings, let attackers enumerate which e-mails have accounts, then focus attacks or phishing on them. We also spend equal hashing time on unknown users.

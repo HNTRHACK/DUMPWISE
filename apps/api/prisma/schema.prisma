@@ -76,16 +76,45 @@ model Organization {
 }
 
 model User {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email       String   @unique @db.VarChar(254) // stored lower-case
-  displayName String   @map("display_name") @db.VarChar(120)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String    @unique @db.VarChar(254) // stored lower-case
+  displayName       String    @map("display_name") @db.VarChar(120)
+  // "scrypt$N$r$p$salt$hash" (see src/auth/password-hasher.ts). NULL = cannot log in.
+  passwordHash      String?   @map("password_hash") @db.VarChar(255)
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  failedLoginCount  Int       @default(0) @map("failed_login_count")
+  lockedUntil       DateTime? @map("locked_until") @db.Timestamptz(3)
+  disabledAt        DateTime? @map("disabled_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  memberships Membership[]
-  auditEvents AuditEvent[]
+  memberships  Membership[]
+  auditEvents  AuditEvent[]
+  authSessions AuthSession[]
 
   @@map("users")
+}
+
+// One login session. Tokens are random secrets given to the client ONCE; only their
+// SHA-256 hashes are stored, so a database leak does not leak usable tokens.
+model AuthSession {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                    String    @map("user_id") @db.Uuid
+  accessTokenHash           String    @unique @map("access_token_hash") @db.Char(64)
+  accessExpiresAt           DateTime  @map("access_expires_at") @db.Timestamptz(3)
+  refreshTokenHash          String    @unique @map("refresh_token_hash") @db.Char(64)
+  // Hash of the refresh token that was rotated away; presenting it again = token theft.
+  previousRefreshTokenHash  String?   @unique @map("previous_refresh_token_hash") @db.Char(64)
+  expiresAt                 DateTime  @map("expires_at") @db.Timestamptz(3) // absolute session end
+  lastRefreshedAt           DateTime? @map("last_refreshed_at") @db.Timestamptz(3)
+  revokedAt                 DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason             String?   @map("revoked_reason") @db.VarChar(40)
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, revokedAt])
+  @@map("auth_sessions")
 }
 
 model Membership {
@@ -243,9 +272,10 @@ model ReconciliationResult {
 }
 
 // Append-only: the runtime DB role is granted INSERT and SELECT only.
+// organization_id is NULL for user-level security events (login, logout, password change).
 model AuditEvent {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
   actorUserId    String?  @map("actor_user_id") @db.Uuid
   action         String   @db.VarChar(80)
   entityType     String   @map("entity_type") @db.VarChar(80)
@@ -253,9 +283,10 @@ model AuditEvent {
   metadata       Json     @default("{}")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
   @@map("audit_events")
 }

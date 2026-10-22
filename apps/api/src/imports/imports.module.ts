@@ -1,11 +1,34 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { MulterModule } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import type { Env } from '../config/env.js';
+import { ImportBatchesService } from './import-batches.service.js';
 import { ImportPipelineService } from './import-pipeline.service.js';
+import { ImportsController } from './imports.controller.js';
 import { PublicationService } from './publication.service.js';
 
-// No HTTP controller in Phase 1: imports run through the operator CLI (src/cli) until
-// real authentication exists. The services enforce authorization themselves.
 @Module({
-  providers: [ImportPipelineService, PublicationService],
-  exports: [ImportPipelineService, PublicationService],
+  imports: [
+    // Upload parsing limits are enforced WHILE the request streams in, so an oversized
+    // or malformed multipart request is cut off before it fills memory.
+    MulterModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        storage: memoryStorage(),
+        limits: {
+          fileSize: config.get('IMPORT_MAX_BYTES', { infer: true }),
+          files: 2,
+          fields: 2,
+          fieldSize: 1024,
+          parts: 4,
+          headerPairs: 50,
+        },
+      }),
+    }),
+  ],
+  controllers: [ImportsController],
+  providers: [ImportPipelineService, PublicationService, ImportBatchesService],
+  exports: [ImportPipelineService, PublicationService, ImportBatchesService],
 })
 export class ImportsModule {}

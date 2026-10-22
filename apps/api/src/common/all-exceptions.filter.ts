@@ -56,6 +56,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       path: req.path,
       timestamp: new Date().toISOString(),
     };
+    // RFC 6750: tell the client which authentication scheme to use.
+    if (status === HttpStatus.UNAUTHORIZED) res.setHeader('WWW-Authenticate', 'Bearer realm="dumpwise"');
     res.status(status).json(payload);
   }
 }

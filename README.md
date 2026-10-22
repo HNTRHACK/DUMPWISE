@@ -3,21 +3,24 @@
 Enterprise sales and logistics intelligence for Indian manufacturing and distribution
 companies that run SAP.
 
-> **Status: Phase 1 (backend foundation).** This repository currently contains a secured
-> NestJS API, a PostgreSQL schema, a deterministic SAP billing CSV import pipeline with
-> reconciliation, and one protected analytics endpoint. All data in the repository is
-> **synthetic**. There is no frontend, no live SAP integration and no forecasting yet.
+> **Status: Phase 2a (authentication + protected APIs) on branch `feat/auth-secure-apis`.**
+> The repository contains a NestJS API with e-mail/password login and revocable sessions,
+> organization-scoped authorization, HTTP endpoints for import, publication and monthly
+> sales, and a deterministic SAP billing CSV pipeline with reconciliation. All data in the
+> repository is **synthetic**. There is no frontend, no live SAP integration and no forecasting yet.
 
 ## What exists today
 
 | Area | Phase 1 implementation |
 |---|---|
 | API | NestJS 12 + TypeScript on `http://127.0.0.1:3001` |
-| Endpoints | `GET /health`, `GET /v1/sales/monthly` (protected) |
-| Database | PostgreSQL 17 in Docker (localhost only), Prisma 7 ORM, 1 migration |
+| Auth | E-mail + password (scrypt), opaque bearer tokens, refresh rotation with reuse detection, lockout, rate limits |
+| Endpoints | `/health`, `/v1/auth/*` (login, refresh, logout, me, change-password), `/v1/imports` (upload, list, detail, publish), `/v1/sales/monthly` |
+| Authorization | Membership per organization with roles OWNER / ANALYST / VIEWER |
+| Database | PostgreSQL 17 in Docker (localhost only), Prisma 7 ORM, 2 migrations |
 | Import | CSV → header recognition → type conversion → validation → duplicate detection → DB import → monthly aggregation → reconciliation → publication |
 | Data | 12 months of synthetic SAP billing data (`data/synthetic/`) with independent control totals |
-| Tests | 23 unit tests + 21 database-backed end-to-end tests |
+| Tests | 34 unit tests + 46 database-backed end-to-end tests |
 
 ## Prerequisites
 
@@ -66,6 +69,42 @@ npm run cli -- publish --org synthetic-demo --actor demo.owner@example.invalid -
 npm run cli -- monthly --org synthetic-demo --actor demo.analyst@example.invalid --from 2026-01 --to 2026-09
 ```
 
+## Using the HTTP API (Windows PowerShell)
+
+Users have no password until an operator sets one. There is no public sign-up.
+
+```powershell
+# In apps\api: give the demo owner a temporary password (printed ONCE)
+npm run cli -- reset-password --email demo.owner@example.invalid
+
+# Start the API in another terminal: npm run start:dev
+$base = 'http://127.0.0.1:3001'
+$login = Invoke-RestMethod -Method Post "$base/v1/auth/login" -ContentType 'application/json' `
+  -Body (@{ email = 'demo.owner@example.invalid'; password = Read-Host 'Password' } | ConvertTo-Json)
+$h = @{ Authorization = "Bearer $($login.accessToken)" }
+
+# Who am I, and which organizations can I use?
+$me = Invoke-RestMethod "$base/v1/auth/me" -Headers $h
+$h['X-Organization-Id'] = $me.memberships[0].organizationId
+
+# Upload an import (curl.exe ships with Windows; use it for multipart uploads)
+curl.exe -s -X POST "$base/v1/imports" -H "Authorization: Bearer $($login.accessToken)" `
+  -H "X-Organization-Id: $($h['X-Organization-Id'])" `
+  -F "file=@..\..\data\synthetic\SYNTHETIC_sap_billing_2025-10_to_2026-09.csv;type=text/csv" `
+  -F "controlTotals=@..\..\data\synthetic\SYNTHETIC_sap_billing_2025-10_to_2026-09.control_totals.json;type=application/json"
+
+Invoke-RestMethod "$base/v1/imports" -Headers $h                                   # list batches
+Invoke-RestMethod -Method Post "$base/v1/imports/<batchId>/publish" -Headers $h    # OWNER only
+Invoke-RestMethod "$base/v1/sales/monthly?from=2026-01&to=2026-09" -Headers $h
+
+# Change the temporary password, then log out
+Invoke-RestMethod -Method Post "$base/v1/auth/change-password" -Headers $h -ContentType 'application/json' `
+  -Body (@{ currentPassword = Read-Host 'Current'; newPassword = Read-Host 'New (12+ chars)' } | ConvertTo-Json)
+Invoke-RestMethod -Method Post "$base/v1/auth/logout" -Headers $h
+```
+
+Other operator commands: `create-user --email --name`, `add-member --org --email --role OWNER|ANALYST|VIEWER`.
+
 ## Daily commands (run in `apps\api`)
 
 ```powershell
@@ -81,8 +120,8 @@ npm run db:migrate:dev  # after editing prisma/schema.prisma: create + apply a m
 npm run openapi:export  # regenerate docs/openapi.json (after npm run build)
 ```
 
-`GET /v1/sales/monthly` answers **401 to every caller** in Phase 1 because no identity
-provider is integrated yet. This is intentional; see [docs/SECURITY.md](docs/SECURITY.md).
+All `/v1/*` endpoints except login and refresh require `Authorization: Bearer <accessToken>`.
+Organization-scoped endpoints also need `X-Organization-Id`. See [docs/API.md](docs/API.md).
 
 ## Repository layout
 
@@ -108,4 +147,5 @@ docs/                        architecture, schema, security, API, results, learn
 - [docs/SECURITY.md](docs/SECURITY.md) — controls and honest limitations
 - [docs/API.md](docs/API.md) — endpoints ([docs/openapi.json](docs/openapi.json))
 - [docs/PHASE_1_RESULTS.md](docs/PHASE_1_RESULTS.md) — what was built and verified
+- [docs/PHASE_2A_AUTH_RESULTS.md](docs/PHASE_2A_AUTH_RESULTS.md) — authentication + protected APIs, verified results
 - [docs/LEARNING_GUIDE.md](docs/LEARNING_GUIDE.md) — concepts, exercises and interview questions per step

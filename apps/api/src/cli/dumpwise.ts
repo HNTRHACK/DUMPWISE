@@ -6,6 +6,10 @@
 //   publish  --org <slug> --actor <email> --batch <uuid>
 //   monthly  --org <slug> --actor <email> [--from YYYY-MM] [--to YYYY-MM]
 //   openapi  --out <file>
+//   create-user     --email <email> --name <display name>
+//   add-member      --org <slug> --email <email> --role OWNER|ANALYST|VIEWER
+//   reset-password  --email <email>     (prints a generated password ONCE; revokes sessions)
+import { randomBytes } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { Logger } from '@nestjs/common';
@@ -13,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module.js';
 import { buildOpenApiDocument } from '../app.setup.js';
+import { AuthService } from '../auth/auth.service.js';
 import { OrganizationAccessService } from '../auth/organization-access.service.js';
 import type { Env } from '../config/env.js';
 import { ImportPipelineService } from '../imports/import-pipeline.service.js';
@@ -38,6 +43,9 @@ const { positionals, values } = parseArgs({
     from: { type: 'string' },
     to: { type: 'string' },
     out: { type: 'string' },
+    email: { type: 'string' },
+    name: { type: 'string' },
+    role: { type: 'string' },
   },
 });
 
@@ -130,8 +138,39 @@ try {
       console.log(`OpenAPI document written to ${need('out')}`);
       break;
     }
+    case 'create-user': {
+      const email = need('email').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) throw new Error('Invalid --email');
+      const user = await prisma.user.create({ data: { email, displayName: need('name').slice(0, 120) } });
+      console.log(JSON.stringify({ userId: user.id, email: user.email, note: 'No password yet: run reset-password' }, null, 2));
+      break;
+    }
+    case 'add-member': {
+      const role = need('role');
+      if (role !== 'OWNER' && role !== 'ANALYST' && role !== 'VIEWER') throw new Error('--role must be OWNER, ANALYST or VIEWER');
+      const org = await prisma.organization.findUnique({ where: { slug: need('org') } });
+      const user = await prisma.user.findUnique({ where: { email: need('email').toLowerCase() } });
+      if (!org || !user) throw new Error('Unknown organization or user');
+      const m = await prisma.membership.upsert({
+        where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
+        update: { role },
+        create: { organizationId: org.id, userId: user.id, role },
+      });
+      console.log(JSON.stringify({ organization: org.slug, email: user.email, role: m.role }, null, 2));
+      break;
+    }
+    case 'reset-password': {
+      const user = await prisma.user.findUnique({ where: { email: need('email').toLowerCase() } });
+      if (!user) throw new Error('Unknown user');
+      // 144 random bits; shown once and never stored in plain text.
+      const password = randomBytes(18).toString('base64url');
+      await app.get(AuthService).setPassword(user.id, password);
+      console.log(`Temporary password for ${user.email} (shown once; change it via POST /v1/auth/change-password):`);
+      console.log(password);
+      break;
+    }
     default:
-      console.error('Commands: seed-synthetic | import | publish | monthly | openapi');
+      console.error('Commands: seed-synthetic | import | publish | monthly | openapi | create-user | add-member | reset-password');
       process.exitCode = 1;
   }
 } catch (e) {

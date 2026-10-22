@@ -1,6 +1,7 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiForbiddenResponse,
   ApiHeader,
   ApiOkResponse,
@@ -16,8 +17,9 @@ import { SalesService } from './sales.service.js';
 @ApiTags('sales')
 @Controller('v1/sales')
 @UseGuards(OrganizationAccessGuard)
+@ApiBearerAuth()
 @ApiHeader({ name: 'X-Organization-Id', required: true, description: 'Organization UUID the caller is a member of' })
-@ApiUnauthorizedResponse({ description: 'Not authenticated. In Phase 1 no identity provider is configured, so all requests receive 401.' })
+@ApiUnauthorizedResponse({ description: 'Missing, expired or revoked access token' })
 @ApiForbiddenResponse({ description: 'Caller is not a member of the organization' })
 export class SalesController {
   constructor(private readonly sales: SalesService) {}
