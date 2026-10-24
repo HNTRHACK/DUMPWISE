@@ -1,6 +1,6 @@
 import { validateEnv } from './env.js';
 
-describe('existing lockout configuration during Phase 2B transition', () => {
+describe('password-change verification lockout configuration', () => {
   const base = { DATABASE_URL: 'postgresql://localhost/unused' };
 
   it('keeps validated defaults consumed by AuthService', () => {

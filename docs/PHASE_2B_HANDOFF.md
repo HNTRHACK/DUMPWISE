@@ -36,12 +36,37 @@ Service authorization supplies trusted context. These GUC settings can be set by
 
 ## Remaining limitations / next work
 
-- LOGIN_* abuse-protection settings, session caps, user login sources and new session metadata behavior remain unfinished. Existing lockout configuration remains enforced.
-- Expired sessions and rate buckets need an operator cleanup policy. Test databases/roles accumulate; removal needs explicit approval.
+- LOGIN_* abuse protection, session caps, successful source fingerprints and session metadata are now implemented; see the session-controls continuation below.
+- Operator auth cleanup is implemented, but external scheduling is still required. Test databases/roles accumulate; removing those artifacts remains separate from auth cleanup.
 - Migration administration still uses the local superuser. A dedicated schema-owner migration role remains future hardening.
 - CLI --actor is still operator-trusted. Provisioner credentials must stay out of API deployments. The CLI currently needs runtime configuration as well as provisioner configuration for bootstrap operations.
 - TRUST_PROXY must match actual deployment topology. Broad true/hop-count trust can allow client-IP spoofing with alternate network paths.
 - Tests prove PostgreSQL behavior in disposable databases; they do not establish that existing development grants match the new role setup. Development was inspected read-only and left alone.
 - No new dependency audit or production deployment was performed. Phase 2A audit results are historical.
 
-Next safe work: broaden adversarial per-table RLS coverage, then implement the unfinished abuse/session controls with concurrency tests. Run npm run verify; its e2e stage now uses the disposable runner. Do not invoke migrations or grant scripts against development as a side effect of tests.
+Next safe work: broaden adversarial per-table RLS coverage and review deployment scheduling/proxy configuration. Run npm run verify; its e2e stage now uses the disposable runner. Do not invoke migrations or grant scripts against development as a side effect of tests.
+
+## Session-controls continuation (2026-10-23)
+
+Started from clean feat/security-hardening at ef5c6d8. Changes remain uncommitted. No development database changes, resets, grant changes, unrelated deletions, pushes or merges were made. Financial code, RLS migrations and runtime permissions were left unchanged.
+
+Implemented LoginAbuseService using the existing atomic PostgreSQL bucket helper. Failed credentials (including unknown accounts) count against account/IP, IP-wide and distributed-account buckets. At threshold, pair/IP blocks reject all credentials from that source; account-wide protection admits only previously successful source fingerprints, still requiring the correct password and unblocked pair/IP counters. Success does not erase failure counters. Login no longer globally locks a user after failures from one source; the legacy AUTH_MAX_FAILED_LOGINS/AUTH_LOCKOUT_SECONDS settings now apply only to password-change current-password verification.
+
+AuthController passes Express's resolved client IP and bounded user-agent metadata to AuthService; trusted-proxy handling remains unchanged. Successful login records a hashed source. Session creation locks the user row, rechecks verified credentials and disabled status, and evicts oldest live sessions to enforce AUTH_MAX_SESSIONS_PER_USER (default 10) even under concurrency. Access/refresh tokens of evicted sessions stop working immediately. Last-seen writes are conditional, roughly once per minute.
+
+Added npm run auth:cleanup, an operator-only command using the existing provisioner SELECT/DELETE permissions. It rejects superuser or mismatched-role connections. Per invocation it deletes at most 1000 rows from each auth table, configurable with AUTH_CLEANUP_BATCH_SIZE (1..10000). Sessions are retained for 7 days after expiry or revocation, configurable with AUTH_CLEANUP_RETENTION_DAYS (1..365). Expired buckets with active blocks are preserved. Bucket DELETE predicates recheck eligibility to protect renewed counters without requiring additional UPDATE privileges. The transaction rolls back on failure and uses a 30-second statement timeout. Audit and financial tables are never cleanup targets.
+
+Operational use: schedule npm run auth:cleanup daily under the operator identity, repeating bounded batches for a backlog. Nothing is scheduled automatically. Do not deploy provisioner credentials to the API. No cleanup command was run against development during this work.
+
+### Final validation
+
+- npm run verify: exit 0 (lint, typecheck, build, unit and disposable integration suites).
+- Unit tests: 42/42 in four files.
+- Integration/API tests: 61/61 in eight files, 48.26 seconds.
+- Successful database: dumpwise_verify_0bed0bff2aa24366_test.
+- Diagnostic databases retained: dumpwise_verify_ba44af9dfe2ce9e0_test and dumpwise_verify_6c1537e37aa00863_test. Earlier failures exposed an invalid expiry fixture, an operator FOR UPDATE privilege assumption, and a test that assumed no other blocked pairs existed. These were corrected without widening runtime/operator grants.
+- git diff --check: passed.
+
+New tests cover concurrent persistent failure counters, unknown-account attempts, IP-wide spraying, distributed attacks with known-source access, block expiry, concurrent session caps, evicted refresh rejection, bounded metadata and last-seen updates, bounded cleanup, active sessions/blocks, recent revocation retention, old revocation deletion, invalid cleanup options and runtime cleanup denial. The existing RLS, tenant authorization, API and SAP financial suites all pass.
+
+Remaining limits: source fingerprints have no automatic expiry and represent networks rather than devices; shared/NAT IPs share limits. Already in-flight attempts may complete after a block starts. No MFA, new migration-owner role, automatic host scheduler or test database/role cleanup was added. See SECURITY.md for the exact defaults, retention policy and operator instructions.

@@ -24,6 +24,7 @@
     "prisma:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy && node scripts/setup-db-roles.ts",
     "db:migrate:dev": "prisma migrate dev && prisma generate && node scripts/setup-db-roles.ts",
+    "auth:cleanup": "node scripts/cleanup-auth.ts",
     "db:roles": "node scripts/setup-db-roles.ts",
     "cli": "node dist/cli/dumpwise.js",
     "openapi:export": "node dist/cli/dumpwise.js openapi --out ../../docs/openapi.json",

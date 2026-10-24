@@ -19,7 +19,7 @@ const envSchema = z.object({
   // Authentication
   AUTH_ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(60).max(3600).default(900),
   AUTH_SESSION_TTL_SECONDS: z.coerce.number().int().min(3600).max(30 * 86400).default(7 * 86400),
-  // Keep the existing lockout enforced until LoginAbuseService replaces its callers.
+  // Password-change verification lockout; login uses source-aware LoginAbuseService.
   AUTH_MAX_FAILED_LOGINS: z.coerce.number().int().min(3).max(20).default(5),
   AUTH_LOCKOUT_SECONDS: z.coerce.number().int().min(60).max(86400).default(900),
   AUTH_MAX_SESSIONS_PER_USER: z.coerce.number().int().min(1).max(100).default(10),
