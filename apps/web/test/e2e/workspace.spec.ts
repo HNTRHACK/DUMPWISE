@@ -176,11 +176,46 @@ test.describe("import center", () => {
   });
 });
 
-test("products, distributors and customers show honest 'Coming next' states", async ({ page }) => {
-  await login(page, "analyst");
-  for (const p of ["products", "distributors", "customers"]) {
-    await page.goto(`/app/${p}`);
-    await expect(page.getByText("Coming next — not available yet")).toBeVisible();
-    await expect(page.getByText("Proposed API contract (not implemented)")).toBeVisible();
+test("analytics pages load through the BFF with filters, paging and exact product trends", async ({ page }) => {
+  await login(page, "viewer");
+  for (const dimension of ["products", "distributors", "customers"]) {
+    await page.goto(`/app/${dimension}`);
+    const table = page.getByRole("table", { name: new RegExp(dimension + " analytics", "i") });
+    await expect(table.locator("tbody tr")).toHaveCount(20);
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(5);
+    await page.getByRole("button", { name: "Previous", exact: true }).click();
+    await expect(table.locator("tbody tr")).toHaveCount(20);
+    await page.getByLabel("Unit", { exact: true }).selectOption("KG");
+    await expect(table.locator("tbody tr")).toHaveCount(12);
+    await page.getByLabel("Sort by").selectOption("netQuantity");
+    await page.getByLabel("Unit", { exact: true }).selectOption("");
+    await page.getByLabel("Search code or name").fill(`${dimension}-01`);
+    await expect(table.locator("tbody tr")).toHaveCount(1);
+    if (dimension === "products") {
+      await page.getByRole("button", { name: "products-01", exact:true }).click();
+      await expect(page.getByRole("table", { name: "Exact monthly product trend for products-01" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: /Product trend.*products-01/ })).toBeVisible();
+    }
+    await page.getByRole("radio", {name:"USD"}).click();
+    await expect(page.getByRole("table", {name:new RegExp(dimension + " analytics in USD", "i")})).toBeVisible();
+    await page.getByLabel("Search code or name").fill("no-match");
+    await expect(page.getByText("No matching billing activity")).toBeVisible();
+    await page.getByLabel("Search code or name").fill("");
+    await expect(page.getByRole("table", { name: new RegExp(dimension + " analytics", "i") })).toBeVisible();
+    await page.setViewportSize({width:375,height:900});
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.setViewportSize({width:1440,height:900});
   }
+});
+
+test("analytics failure is explicit and retry recovers", async ({ page }) => {
+  await login(page, "viewer");
+  await page.route("**/api/v1/analytics/products?*", route => route.fulfill({ status: 403, contentType: "application/json", body: JSON.stringify({ statusCode: 403, message: "No access" }) }));
+  await page.goto("/app/products");
+  await expect(page.getByText("You don't have access to this")).toBeVisible();
+  await expect(page.getByRole("table", { name: /Products analytics/ })).toHaveCount(0);
+  await page.unroute("**/api/v1/analytics/products?*");
+  await page.reload();
+  await expect(page.getByRole("table", { name: /Products analytics/ })).toBeVisible();
 });

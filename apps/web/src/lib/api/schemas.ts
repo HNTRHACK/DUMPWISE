@@ -149,3 +149,21 @@ export const loginRequestSchema = z.object({
   email: z.email().max(254),
   password: z.string().min(1).max(128),
 });
+
+// Phase 4: amounts remain decimal strings all the way to display.
+export const analyticsRowSchema = z.object({
+ id: z.uuid(), code: z.string(), name: z.string().nullable(), unit: z.string(),
+ netRevenue: decimal, creditedAmount: decimal, returnedAmount: decimal, cancelledAmount: decimal,
+ netQuantity: decimal, transactionCount: z.number().int(), previousRevenue: decimal,
+ growthPercent: decimal.nullable(), growthReason: z.string().nullable(),
+});
+export const analyticsSummarySchema = z.object({
+ netRevenue: decimal, creditedAmount: decimal, returnedAmount: decimal, cancelledAmount: decimal,
+ transactionCount: z.number().int(), units: z.array(unitsSoldSchema),
+});
+export const analyticsSchema = z.object({
+ organizationId: z.uuid(), currency: z.string(), from: month, to: month, previousFrom: month, previousTo: month,
+ items: z.array(analyticsRowSchema), summary: analyticsSummarySchema,
+ total: z.number().int(), limit: z.number().int(), offset: z.number().int(),
+});
+export const productTrendSchema = monthlySalesSchema.extend({ productId: z.uuid() });

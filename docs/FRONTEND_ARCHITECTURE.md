@@ -130,3 +130,7 @@ CSP (`default-src 'self'`; `connect-src 'self'`; `frame-ancestors 'none'`; `obje
 no-store` on `/api/*` and `/app/*`. **Trade-off:** `script-src` includes `'unsafe-inline'`,
 because Next's inline bootstrap scripts would otherwise need per-request nonces, which would
 make every page dynamic.
+
+## Phase 4 update
+
+Products, Distributors and Customers are now functional authenticated analytics pages (no longer Coming next). AnalyticsPage shares KPI, filter, table, pagination and state handling. Four new org-scoped GET operations are allowlisted in the BFF, including a UUID-validated product trend. Four new runtime schemas match the generated AnalyticsRowDto, AnalyticsSummaryDto, AnalyticsResponseDto and ProductTrendDto contracts. Backend details and growth definitions are documented in API.md and ARCHITECTURE.md. Browser mocks remain test-only; real financial values always arrive from the authenticated API.

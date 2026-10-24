@@ -19,6 +19,10 @@ export interface ProxyRoute {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const PROXY_ROUTES: ProxyRoute[] = [
+  { method: "GET", pattern: ["analytics", "products"], orgScoped: true },
+  { method: "GET", pattern: ["analytics", "distributors"], orgScoped: true },
+  { method: "GET", pattern: ["analytics", "customers"], orgScoped: true },
+  { method: "GET", pattern: ["analytics", "products", ":uuid", "trend"], orgScoped: true },
   { method: "GET", pattern: ["auth", "me"], orgScoped: false },
   { method: "POST", pattern: ["auth", "change-password"], orgScoped: false, body: "json" },
   { method: "GET", pattern: ["imports"], orgScoped: true },

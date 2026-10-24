@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { z } from "zod";
 import {
+  analyticsSchema, analyticsRowSchema, analyticsSummarySchema, productTrendSchema,
   importBatchDetailSchema,
   importBatchListSchema,
   importBatchSummarySchema,
@@ -25,6 +26,8 @@ const openapi = JSON.parse(
 ) as { components: { schemas: Record<string, { properties: Record<string, unknown>; required?: string[] }> } };
 
 const pairs: [string, z.ZodObject][] = [
+  ["AnalyticsResponseDto", analyticsSchema], ["AnalyticsRowDto", analyticsRowSchema],
+  ["AnalyticsSummaryDto", analyticsSummarySchema], ["ProductTrendDto", productTrendSchema],
   ["MeDto", meSchema],
   ["MembershipDto", membershipSchema],
   ["TokenPairDto", tokenPairSchema],

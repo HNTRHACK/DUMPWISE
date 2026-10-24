@@ -29,9 +29,9 @@ const NAV = [
   { href: "/app", label: "Overview", icon: LayoutDashboard },
   { href: "/app/sales", label: "Sales", icon: BarChart3 },
   { href: "/app/imports", label: "Imports", icon: FileUp },
-  { href: "/app/products", label: "Products", icon: Boxes, soon: true },
-  { href: "/app/distributors", label: "Distributors", icon: Store, soon: true },
-  { href: "/app/customers", label: "Customers", icon: Users, soon: true },
+  { href: "/app/products", label: "Products", icon: Boxes },
+  { href: "/app/distributors", label: "Distributors", icon: Store },
+  { href: "/app/customers", label: "Customers", icon: Users },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 
@@ -44,7 +44,7 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav aria-label="Workspace">
       <ul className="space-y-0.5">
-        {NAV.map(({ href, label, icon: Icon, soon }) => {
+        {NAV.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href);
           return (
             <li key={href}>
@@ -59,7 +59,6 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
               >
                 <Icon className={cn("size-4", active ? "text-ember" : "")} aria-hidden />
                 <span className="flex-1">{label}</span>
-                {soon ? <span className="rounded-full border border-white/10 px-1.5 text-[10px] uppercase tracking-wider text-warm-500">Soon</span> : null}
               </Link>
             </li>
           );

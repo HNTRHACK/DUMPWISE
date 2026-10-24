@@ -1,5 +1,7 @@
 import type { z } from "zod";
 import {
+  analyticsSchema,
+  productTrendSchema,
   errorBodySchema,
   importBatchDetailSchema,
   importBatchListSchema,
@@ -139,6 +141,11 @@ async function attemptRequest<T>(path: string, method: "GET" | "POST", opts: Req
 // ---- Typed operations (one per allowlisted backend endpoint) ------------------------------
 
 export const api = {
+  analytics: (organizationId: string, dimension: "products" | "distributors" | "customers", query: Record<string, string>, signal?: AbortSignal) =>
+    apiRequest(`/api/v1/analytics/${dimension}?${new URLSearchParams(query)}`, { organizationId, schema: analyticsSchema, signal }),
+  productTrend: (organizationId: string, id: string, query: Record<string, string>, signal?: AbortSignal) =>
+    apiRequest(`/api/v1/analytics/products/${encodeURIComponent(id)}/trend?${new URLSearchParams(query)}`, { organizationId, schema: productTrendSchema, signal }),
+
   session: (signal?: AbortSignal) => apiRequest("/api/auth/session", { schema: meSchema, signal }),
 
   login: (email: string, password: string) =>

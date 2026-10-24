@@ -46,3 +46,7 @@ sales: published batches only, organization-scoped, one currency per request, de
 |---|---|---|
 | `DUMPWISE_API_URL` | web | API base URL (default `http://127.0.0.1:3001`) |
 | `TRUST_PROXY` | **API** | Keep unset (`false`) while Next.js is the edge. Only behind a header-overwriting reverse proxy, together with web `DUMPWISE_TRUST_PROXY_HEADER=true` (see PHASE_3_5_INTEGRATION.md) |
+
+## Phase 4 implemented contract (supersedes earlier proposals)
+
+Products, distributors and customers now call GET /v1/analytics/products, /v1/analytics/distributors and /v1/analytics/customers via allowlisted BFF routes. Product drilldown calls GET /v1/analytics/products/:id/trend. Exact query/response fields are in API.md and generated openapi.json. Cost/profit/freight/retention metrics remain unsupported and are not shown. Earlier placeholder DTO proposals are historical, not the current contract.

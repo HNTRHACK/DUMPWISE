@@ -199,3 +199,13 @@ the **unchanged** `ImportPipelineService` and `PublicationService`.
 | Units never summed across units | 5 KG + 3 cartons is meaningless |
 | Currencies never mixed | No FX rates exist in Phase 1 |
 | Composite tenant foreign keys | The database itself prevents cross-organization links |
+
+## Phase 4 reporting architecture
+
+AnalyticsModule adds a read-only AnalyticsController, validated range/list DTOs and AnalyticsService. Both controller and service enforce membership. Every financial query uses TenantDb with transaction-local organization/user context, explicit organization predicates and composite tenant joins; RLS, grants and financial ingestion logic are unchanged.
+
+The list query uses CTEs: monthly groups facts by entity/month/unit, current selects the requested period, ranked aggregates current and equal-length preceding-period statistics, and page applies validated ordering plus LIMIT/OFFSET. The final SQL statement returns the page, count and full-filter summary from one statement snapshot. Monetary SUM uses PostgreSQL numeric; JSON casts sums to text before transport. Decimal.js (50-digit arithmetic context) formats amounts and calculates growth. Prisma.sql binds request values; Prisma.raw is used only for code-owned dimension identifiers and sort tokens verified against an allowlist.
+
+Existing indexes on sales_transactions (organization_id,billing_date), (organization_id,product_id), (organization_id,distributor_id), (organization_id,customer_id) and (organization_id,import_batch_id), plus composite master keys, support the tenant/date scan and joins. The upper bound is 72 months read (36 current plus 36 preceding). SQL pagination bounds transfer, not aggregation work: all matching groups still have to be aggregated and sorted. No production-scale query-plan benchmark was performed. Inspect EXPLAIN (ANALYZE, BUFFERS) on representative synthetic volumes before adding indexes/materialized rollups; high offsets remain more expensive than keyset pagination.
+
+The three Next.js pages share AnalyticsPage. Existing workspace state supplies organization and 3/6/12 completed-month ranges; existing monthly sales discovers available currencies and units. Typed BFF operations validate response schemas against OpenAPI. Each report is keyed by organization/range/currency, aborts superseded requests and shows loading/error states instead of relabelling stale results. Filter changes reset pagination. Product selection loads a trend through the BFF; seriesFor fills absent months with null and MonthlyChart converts to numbers only for geometry. Exact tables support the chart and preserve separate quantity units. No frontend analytics fixture is shipped in the application; browser-only synthetic mocks live under test/e2e.

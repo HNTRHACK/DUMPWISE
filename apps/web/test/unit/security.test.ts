@@ -7,6 +7,9 @@ const UUID = "87239ee7-47eb-4cbe-ab63-7b13eebe549a";
 
 describe("BFF allowlist (no open proxy)", () => {
   it.each([
+    ["GET", ["analytics", "products"]],
+    ["GET", ["analytics", "distributors"]], ["GET", ["analytics", "customers"]],
+    ["GET", ["analytics", "products", UUID, "trend"]],
     ["GET", ["sales", "monthly"]],
     ["GET", ["imports"]],
     ["POST", ["imports"]],
@@ -26,6 +29,7 @@ describe("BFF allowlist (no open proxy)", () => {
     ["GET", ["imports", "not-a-uuid"]],
     ["POST", ["sales", "monthly"]],
     ["GET", ["health"]],
+    ["POST", ["analytics", "products"]], ["GET", ["analytics", "products", "invalid", "trend"]],
   ])("rejects %s %s", (method, segments) => {
     expect(matchProxyRoute(method, segments as string[])).toBeNull();
   });

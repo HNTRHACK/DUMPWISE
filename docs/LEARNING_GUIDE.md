@@ -523,3 +523,14 @@ cloud into an ordered lattice as you scroll: RAW DATA → VALIDATION → RECONCI
 **Interview.**
 1. *Why test against a mock API if you have a real one?* Speed, determinism and safety: no shared database state and no real data. The contract test keeps the mock honest; a smaller set of live tests should still run against a disposable real backend.
 2. *LCP vs. CLS?* LCP is when the largest visible element finishes rendering (perceived load speed). CLS is the total unexpected layout movement. Server-rendered text heroes and font fallbacks keep both good.
+
+## Phase 4 exercises and interview questions
+
+1. GROUP BY: explain why an entity with both EA and KG has two ranking rows. Exercise: add the rows' revenue, then explain why their quantities must remain separate.
+2. SQL aggregation: trace one F2 invoice, G2 credit, RE return and S1 cancellation through monthly and ranked CTEs. Exercise: reconcile 100 - 10 - 20 - 5 = 65 with the API's separate reduction columns.
+3. DTOs: DTO decorators validate the public query before it reaches SQL and describe OpenAPI. Exercise: request limit=101, sort=netQuantity without unit, and an extra organizationId parameter; predict the response and explain the trust boundary.
+4. Pagination: LIMIT/OFFSET bounds the returned page; COUNT and KPI totals describe the full filtered population. Interview: why does LIMIT not eliminate the cost of GROUP BY? Why is id/unit needed as a tie-breaker? When would keyset pagination help?
+5. Indexes: existing tenant/date and tenant/entity indexes serve different predicates. Exercise: inspect EXPLAIN (ANALYZE, BUFFERS) on disposable synthetic data and compare rows scanned with rows returned. Interview: when can another index slow writes without helping this query?
+6. Growth: exercise a positive base, zero base, negative base, returns-only current month and absent previous month. Interview: why is activity coverage different from proof of source completeness?
+7. Charts: trace decimal string -> numeric bar height, while tooltip/table still use the original string. Interview: what breaks if Number() is also used for monetary totals?
+8. Tenancy: explain how explicit filters, composite joins and transaction-local RLS complement each other. Exercise: query without tenant context using the restricted test role, then reuse a one-connection pool across A/B/A.

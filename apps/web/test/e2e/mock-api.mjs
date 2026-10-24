@@ -185,6 +185,22 @@ createServer(async (req, res) => {
       if (from > to) return error(res, 400, "from must not be after to", path);
       return send(res, 200, { organizationId: a.org, dataClassification: "SYNTHETIC", months: SALES[a.org].filter((r) => r.month >= from && r.month <= to) });
     }
+    // Test-only synthetic analytics fixture, never shipped to the dashboard.
+    if (req.method === "GET" && path.startsWith("/v1/analytics/")) {
+      const a = access(req, res, session); if (!a) return;
+      const dimension = path.split('/')[3];
+      const currency = url.searchParams.get('currency'), from = url.searchParams.get('from'), to = url.searchParams.get('to');
+      const unit = url.searchParams.get('unit');
+      if (path.endsWith('/trend')) return send(res, 200, { organizationId: a.org, productId: path.split('/')[4], dataClassification: 'SYNTHETIC', months: SALES[a.org].filter(r => r.currency === currency && r.month >= from && r.month <= to).map(r => ({ ...r, unitsSold: r.unitsSold.filter(u => !unit || u.unit === unit) })) });
+      let items = Array.from({length: 25}, (_,i) => ({ id: '33333333-3333-4333-8333-' + String(i+1).padStart(12,'0'), code: dimension + '-' + String(i+1).padStart(2,'0'), name: 'SYNTHETIC analytics fixture', unit: i % 2 ? 'KG' : 'EA', netRevenue: String((i+1)*100) + '.00', creditedAmount: '10.00', returnedAmount: '20.00', cancelledAmount: '0.00', netQuantity: '3.000', transactionCount: 4, previousRevenue: '0.00', growthPercent: null, growthReason: 'Incomplete comparison coverage' }));
+      const search = (url.searchParams.get('search') ?? '').toLowerCase();
+      items = items.filter(r => (!unit || r.unit === unit) && r.code.toLowerCase().includes(search));
+      const sort = url.searchParams.get('sort') ?? 'netRevenue', direction = url.searchParams.get('direction') === 'asc' ? 1 : -1;
+      items.sort((a,b) => direction * (sort === 'code' ? a.code.localeCompare(b.code) : Number(a[sort])-Number(b[sort])) || a.id.localeCompare(b.id));
+      const limit = Number(url.searchParams.get('limit') ?? 20), offset = Number(url.searchParams.get('offset') ?? 0);
+      const quantities = [...new Set(items.map(r=>r.unit))].sort().map(u=>({unit:u, quantity: (items.filter(r=>r.unit===u).length*3).toFixed(3)}));
+      return send(res, 200, { organizationId:a.org, currency, from, to, previousFrom:'2024-10',previousTo:'2025-09', items:items.slice(offset,offset+limit), total:items.length, limit,offset, summary: {netRevenue: items.reduce((n,r)=>n+Number(r.netRevenue),0).toFixed(2), creditedAmount:(items.length*10).toFixed(2), returnedAmount:(items.length*20).toFixed(2),cancelledAmount:'0.00',transactionCount:items.length*4,units:quantities} });
+    }
     if (req.method === "GET" && path === "/v1/imports") {
       const a = access(req, res, session); if (!a) return;
       const limit = Number(url.searchParams.get("limit") ?? 20), offset = Number(url.searchParams.get("offset") ?? 0);

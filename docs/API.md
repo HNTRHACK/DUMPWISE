@@ -111,3 +111,28 @@ Monthly net sales from **published** batches only:
 - `transactionCount` counts billing line items.
 - Units are reported per sales unit and never added across units. Currencies are never mixed or converted.
 - `from ≤ to`; at most 36 months when both are given.
+
+## Phase 4 analytics (implemented)
+
+All four GET routes require a live bearer session and X-Organization-Id membership. OWNER, ANALYST and VIEWER can read; reporting never grants write permissions.
+
+| Route | Response |
+|---|---|
+| /v1/analytics/products | Ranked SKU/unit rows and full-filter KPI totals |
+| /v1/analytics/distributors | Ranked sold-to distributor/unit rows and KPI totals |
+| /v1/analytics/customers | Ranked ship-to customer/unit rows and KPI totals |
+| /v1/analytics/products/:id/trend | MonthlySalesResponseDto plus productId, filtered to that product |
+
+Required query: from and to (inclusive YYYY-MM, 2000..2099), currency (three uppercase letters). Range is 1..36 months. Optional unit is an uppercase alphanumeric code of up to 10 characters.
+
+List-only query: search (literal case-insensitive substring of code/name, max 100 characters), sort (netRevenue, transactionCount, code, netQuantity), direction (asc/desc), limit (1..100, default 20), offset (0..100000, default 0). netQuantity sorting requires one unit. Stable ties use entity id and unit. Pagination counts entity/unit rows; the same SKU may occupy multiple rows. All unrecognized query fields are rejected. Trend rejects list-only options.
+
+Example: GET /v1/analytics/products?from=2026-07&to=2026-09&currency=INR&unit=EA&sort=netRevenue&direction=desc&limit=20&offset=0
+
+Each list row exposes id, code, nullable name, unit, netRevenue, creditedAmount (G2), returnedAmount (RE), cancelledAmount (S1), netQuantity, transactionCount, previousRevenue, nullable growthPercent and growthReason. Monetary/quantity/percentage values are decimal strings; counts are billing line items, not invoice documents or unique customers. Credits/returns/cancellations are positive magnitudes already subtracted in signed netRevenue, not amounts to subtract again.
+
+The response includes organizationId, currency, from, to, previousFrom, previousTo, items, total, limit, offset and summary. Summary covers ALL matching current-period rows before pagination, not only the displayed page. Its units array keeps quantities separate. Revenue can be added across units within the selected currency; quantities cannot.
+
+Growth compares the requested N months to the immediately preceding N months, for the same entity/unit/filter/currency. Every month in both periods must contain at least one eligible line and the previous net revenue must be positive. Otherwise growthPercent is null and growthReason explains incomplete coverage or a zero/negative base. Current negative revenue yields a valid negative growth result when the base qualifies. Missing activity is not proof of zero sales or complete source coverage.
+
+Only PUBLISHED batches with reconciliation_status PASSED are included. Product ids from other organizations return 404 to a member of the requested organization; non-members receive 403. Trends omit absent months; clients render those as gaps. The web app uses the same four allowlisted BFF GET routes at /api/v1/analytics/... . OpenAPI is generated in docs/openapi.json.
