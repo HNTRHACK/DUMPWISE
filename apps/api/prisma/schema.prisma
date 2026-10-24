@@ -71,6 +71,7 @@ model Organization {
   salesTransactions     SalesTransaction[]
   reconciliationResults ReconciliationResult[]
   auditEvents           AuditEvent[]
+  importTemplates       ImportTemplateVersion[]
 
   @@map("organizations")
 }
@@ -188,15 +189,42 @@ model ImportBatch {
   publishedAt          DateTime?            @map("published_at") @db.Timestamptz(3)
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  templateVersionId    String?              @map("template_version_id") @db.Uuid
+  rulesVersion         String               @default("sap-billing-signs-v1") @map("rules_version") @db.VarChar(80)
 
   organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   salesTransactions     SalesTransaction[]
   reconciliationResults ReconciliationResult[]
+  templateVersion       ImportTemplateVersion? @relation(fields: [organizationId, templateVersionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([organizationId, id])
   @@index([organizationId, status])
   @@index([organizationId, fileSha256])
   @@map("import_batches")
+}
+
+// Every row is a version. Edits create another row; approval does not change mapping data.
+model ImportTemplateVersion {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  name             String   @db.VarChar(120)
+  description      String   @db.VarChar(1000)
+  sourceType       String   @default("SAP_BILLING_CSV") @map("source_type") @db.VarChar(40)
+  version          Int
+  status           String   @default("DRAFT") @db.VarChar(20)
+  mapping          Json
+  rulesVersion     String   @default("sap-billing-signs-v1") @map("rules_version") @db.VarChar(80)
+  createdByUserId   String   @map("created_by_user_id") @db.Uuid
+  approvedByUserId  String?  @map("approved_by_user_id") @db.Uuid
+  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  importBatches ImportBatch[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name, version])
+  @@map("import_template_versions")
 }
 
 model Product {

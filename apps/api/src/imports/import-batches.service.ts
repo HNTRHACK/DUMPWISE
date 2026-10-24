@@ -48,6 +48,8 @@ export class ImportBatchesService {
 export function toSummary(b: ImportBatch): ImportBatchSummaryDto {
   return {
     id: b.id,
+    templateVersionId: b.templateVersionId,
+    rulesVersion: b.rulesVersion,
     fileName: b.fileName,
     fileSha256: b.fileSha256,
     fileSizeBytes: b.fileSizeBytes,

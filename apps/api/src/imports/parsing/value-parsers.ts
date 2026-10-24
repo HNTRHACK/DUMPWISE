@@ -23,7 +23,20 @@ const err = <T>(code: ParseErrorCode, message: string): ParseResult<T> => ({
  * Slash dates are rejected: "03/05/2026" is 3 May in India and 5 March in the US.
  * Returns ISO "YYYY-MM-DD".
  */
-export function parseSapDate(raw: string): ParseResult<string> {
+export function parseSapDate(raw: string, format?: 'YYYY-MM-DD' | 'DD.MM.YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY'): ParseResult<string> {
+  if (format) {
+    const patterns = {
+      'YYYY-MM-DD': /^\d{4}-\d{2}-\d{2}$/,
+      'DD.MM.YYYY': /^\d{2}\.\d{2}\.\d{4}$/,
+      'DD/MM/YYYY': /^\d{2}\/\d{2}\/\d{4}$/,
+      'MM/DD/YYYY': /^\d{2}\/\d{2}\/\d{4}$/,
+    };
+    if (!patterns[format].test(raw)) return err('INVALID_DATE', `Date must match the selected ${format} format.`);
+    if (format.includes('/')) {
+      const [a, b, y] = raw.split('/');
+      return parseSapDate(`${y}-${format === 'MM/DD/YYYY' ? a : b}-${format === 'MM/DD/YYYY' ? b : a}`);
+    }
+  }
   let y: number, m: number, d: number;
   let match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(raw);
   if (match) {

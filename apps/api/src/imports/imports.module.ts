@@ -7,6 +7,8 @@ import { ImportBatchesService } from './import-batches.service.js';
 import { ImportPipelineService } from './import-pipeline.service.js';
 import { ImportsController } from './imports.controller.js';
 import { PublicationService } from './publication.service.js';
+import { ImportTemplatesService } from './import-templates.service.js';
+import { ImportTemplatesController } from './import-templates.controller.js';
 
 @Module({
   imports: [
@@ -27,8 +29,8 @@ import { PublicationService } from './publication.service.js';
       }),
     }),
   ],
-  controllers: [ImportsController],
-  providers: [ImportPipelineService, PublicationService, ImportBatchesService],
+  controllers: [ImportsController, ImportTemplatesController],
+  providers: [ImportPipelineService, PublicationService, ImportBatchesService, ImportTemplatesService],
   exports: [ImportPipelineService, PublicationService, ImportBatchesService],
 })
 export class ImportsModule {}

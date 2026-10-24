@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { applySignRules, isSupportedBillingType, type SupportedBillingType } from './billing-rules.js';
 import type { CanonicalField } from './header-mapping.js';
 import type { ImportIssue } from './issues.js';
+import type { TemplateMapping } from './template-mapping.js';
 import { alphaPad, parseSapDate, parseUnsignedDecimal, type NumberFormat } from './value-parsers.js';
 
 export interface NormalizedRow {
@@ -31,6 +32,7 @@ export function normalizeRow(
   columns: Partial<Record<CanonicalField, number>>,
   line: number,
   numberFormat: NumberFormat,
+  template?: TemplateMapping,
 ): { row?: NormalizedRow; issues: ImportIssue[] } {
   const issues: ImportIssue[] = [];
   const get = (f: CanonicalField): string => {
@@ -67,7 +69,8 @@ export function normalizeRow(
   const customerCode = code('customerCode', 20, 10);
   const sku = code('sku', 40);
 
-  const typeRaw = required('billingType').toUpperCase();
+  const sourceType = required('billingType').toUpperCase();
+  const typeRaw = template ? (Object.hasOwn(template.documentTypes, sourceType) ? template.documentTypes[sourceType] : sourceType + '?') : sourceType;
   if (typeRaw !== '' && !isSupportedBillingType(typeRaw)) {
     error('billingType', 'UNSUPPORTED_BILLING_TYPE', `Billing type "${typeRaw}" is not supported (F2, G2, RE, S1).`);
   }
@@ -75,7 +78,7 @@ export function normalizeRow(
   let billingDate = '';
   const dateRaw = required('billingDate');
   if (dateRaw !== '') {
-    const r = parseSapDate(dateRaw);
+    const r = parseSapDate(dateRaw, template?.dateFormat);
     if (r.ok) billingDate = r.value;
     else error('billingDate', r.code, r.message);
   }

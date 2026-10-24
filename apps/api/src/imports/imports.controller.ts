@@ -101,7 +101,8 @@ export class ImportsController {
       fileName: file.originalname,
       content: file.buffer,
       controlTotals,
-      numberFormat: body.numberFormat ?? 'PLAIN',
+      numberFormat: body.numberFormat,
+      templateVersionId: body.templateVersionId,
     });
     if (result.outcome === 'ALREADY_IMPORTED') res.status(HttpStatus.OK);
     res.setHeader('Location', `/v1/imports/${result.batchId}`);

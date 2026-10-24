@@ -1,9 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 
 /** Text fields of the multipart upload (the two files arrive separately via multer). */
 export class ImportUploadFieldsDto {
+  @IsOptional() @IsUUID() templateVersionId?: string;
   @IsOptional()
   @IsIn(['PLAIN', 'EN_GROUPED'])
   numberFormat?: 'PLAIN' | 'EN_GROUPED';
@@ -17,6 +18,7 @@ export const IMPORT_UPLOAD_SCHEMA = {
     file: { type: 'string', format: 'binary', description: 'SAP billing export (CSV, UTF-8)' },
     controlTotals: { type: 'string', format: 'binary', description: 'Control totals JSON (expected monthly totals)' },
     numberFormat: { type: 'string', enum: ['PLAIN', 'EN_GROUPED'], default: 'PLAIN' },
+    templateVersionId: { type: 'string', format: 'uuid', description: 'Approved immutable organization template; numberFormat must be omitted when selected' },
   },
 };
 
@@ -77,6 +79,8 @@ export class ImportResultDto {
 }
 
 export class ImportBatchSummaryDto {
+  @ApiProperty({ type: String, nullable: true, format: 'uuid' }) templateVersionId: string | null;
+  @ApiProperty() rulesVersion: string;
   @ApiProperty({ format: 'uuid' }) id: string;
   @ApiProperty() fileName: string;
   @ApiProperty() fileSha256: string;

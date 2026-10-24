@@ -70,6 +70,8 @@ try {
 
   // ---- API runtime role ------------------------------------------------------------------
   await sql(`GRANT SELECT, INSERT, UPDATE ON TABLE users, auth_sessions, user_login_sources, rate_limit_buckets, organizations, memberships, audit_events, import_batches, products, distributors, customers, sales_transactions, reconciliation_results TO ${app}`);
+  await sql(`GRANT SELECT, INSERT ON TABLE import_template_versions TO ${app}`);
+  await sql(`GRANT UPDATE (status, approved_at, approved_by_user_id) ON TABLE import_template_versions TO ${app}`);
   await sql(`REVOKE ALL ON TABLE _prisma_migrations FROM ${app}`);
   // Authorization data is read-only for the API: it can CHECK access, never GRANT it.
   await sql(`REVOKE INSERT, UPDATE ON TABLE organizations, memberships FROM ${app}`);
