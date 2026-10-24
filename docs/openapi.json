@@ -234,6 +234,11 @@
                       "EN_GROUPED"
                     ],
                     "default": "PLAIN"
+                  },
+                  "templateVersionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Approved immutable organization template; numberFormat must be omitted when selected"
                   }
                 }
               }
@@ -453,6 +458,638 @@
         "summary": "Publish a batch whose reconciliation PASSED (OWNER only)",
         "tags": [
           "imports"
+        ]
+      }
+    },
+    "/v1/import-templates": {
+      "post": {
+        "operationId": "ImportTemplatesController_create",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an immutable draft mapping version (OWNER/ANALYST)",
+        "tags": [
+          "import-templates"
+        ]
+      },
+      "get": {
+        "operationId": "ImportTemplatesController_list",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}": {
+      "get": {
+        "operationId": "ImportTemplatesController_get",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetailResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}/approve": {
+      "post": {
+        "operationId": "ImportTemplatesController_approve",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "OWNER explicitly approves mapping and financial interpretation",
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}/preview": {
+      "post": {
+        "operationId": "ImportTemplatesController_preview",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read-only CSV validation preview; no import or reconciliation claim",
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/sales/transactions": {
+      "get": {
+        "operationId": "SalesController_transactionsList",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transactionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "distributorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dimension",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "products",
+                "distributors",
+                "customers"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionsResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Caller is not a member of the organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Published reconciled source lineage (OWNER/ANALYST); totals cover full filtered subset",
+        "tags": [
+          "sales"
+        ]
+      }
+    },
+    "/v1/sales/transactions/{id}": {
+      "get": {
+        "operationId": "SalesController_transaction",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transactionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "distributorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dimension",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "products",
+                "distributors",
+                "customers"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionLineageDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Caller is not a member of the organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "sales"
         ]
       }
     },
@@ -1013,6 +1650,325 @@
           "analytics"
         ]
       }
+    },
+    "/v1/reports": {
+      "post": {
+        "operationId": "ReportsController_create",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSummaryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate immutable private XLSX/PPTX from one published snapshot (max 5000 current+comparison facts)",
+        "tags": [
+          "reports"
+        ]
+      },
+      "get": {
+        "operationId": "ReportsController_list",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}": {
+      "get": {
+        "operationId": "ReportsController_get",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPreviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/pilot": {
+      "post": {
+        "operationId": "ReportsController_assess",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PilotAssessmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Append user-entered pilot assessment; previous statements remain in history",
+        "tags": [
+          "reports"
+        ]
+      },
+      "get": {
+        "operationId": "ReportsController_assessments",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/xlsx": {
+      "get": {
+        "operationId": "ReportsController_xlsx",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/pptx": {
+      "get": {
+        "operationId": "ReportsController_pptx",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
     }
   },
   "info": {
@@ -1387,6 +2343,14 @@
       "ImportBatchSummaryDto": {
         "type": "object",
         "properties": {
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -1445,6 +2409,8 @@
           }
         },
         "required": [
+          "templateVersionId",
+          "rulesVersion",
           "id",
           "fileName",
           "fileSha256",
@@ -1488,6 +2454,14 @@
       "ImportBatchDetailDto": {
         "type": "object",
         "properties": {
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
           "id": {
             "type": "string",
             "format": "uuid"
@@ -1558,6 +2532,8 @@
           }
         },
         "required": [
+          "templateVersionId",
+          "rulesVersion",
           "id",
           "fileName",
           "fileSha256",
@@ -1572,6 +2548,507 @@
           "publishedByUserId",
           "issues",
           "reconciliation"
+        ]
+      },
+      "CreateTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "mapping": {
+            "type": "object",
+            "description": "Strict declarative columns [{field,header}], dateFormat, numberFormat and documentTypes. See REPORT_TEMPLATE_SPEC.md."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "version",
+          "mapping"
+        ]
+      },
+      "TemplateVersionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "SAP_BILLING_CSV"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "APPROVED"
+            ]
+          },
+          "mapping": {
+            "type": "object"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "approvedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "name",
+          "description",
+          "sourceType",
+          "version",
+          "status",
+          "mapping",
+          "rulesVersion",
+          "createdByUserId",
+          "approvedByUserId",
+          "approvedAt",
+          "createdAt"
+        ]
+      },
+      "TemplateListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateVersionResponseDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "TemplateExplanationDto": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "interpretation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "header",
+          "required",
+          "interpretation"
+        ]
+      },
+      "TemplateDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "SAP_BILLING_CSV"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "APPROVED"
+            ]
+          },
+          "mapping": {
+            "type": "object"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "approvedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "explanation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateExplanationDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "name",
+          "description",
+          "sourceType",
+          "version",
+          "status",
+          "mapping",
+          "rulesVersion",
+          "createdByUserId",
+          "approvedByUserId",
+          "approvedAt",
+          "createdAt",
+          "explanation"
+        ]
+      },
+      "PreviewStatsDto": {
+        "type": "object",
+        "properties": {
+          "rowsTotal": {
+            "type": "number"
+          },
+          "rowsValid": {
+            "type": "number"
+          },
+          "rowsInvalid": {
+            "type": "number"
+          },
+          "rowsDuplicateInFile": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rowsTotal",
+          "rowsValid",
+          "rowsInvalid",
+          "rowsDuplicateInFile"
+        ]
+      },
+      "TemplatePreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "templateVersionId": {
+            "type": "string"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/PreviewStatsDto"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportIssueDto"
+            }
+          },
+          "issuesTruncated": {
+            "type": "boolean"
+          },
+          "mapping": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateExplanationDto"
+            }
+          },
+          "sample": {
+            "description": "At most 10 normalized rows; signed amounts/quantities remain exact text",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reconciliationStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN"
+            ]
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "templateVersionId",
+          "rulesVersion",
+          "status",
+          "ok",
+          "stats",
+          "issues",
+          "issuesTruncated",
+          "mapping",
+          "sample",
+          "reconciliationStatus",
+          "limitations"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "TransactionSubsetDto": {
+        "type": "object",
+        "properties": {
+          "netRevenue": {
+            "type": "string"
+          },
+          "transactionCount": {
+            "type": "number"
+          },
+          "units": {
+            "description": "Separate unit + exact signed quantity entries",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "netRevenue",
+          "transactionCount",
+          "units"
+        ]
+      },
+      "TransactionLineageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "billingDocument": {
+            "type": "string"
+          },
+          "billingItem": {
+            "type": "string"
+          },
+          "billingDate": {
+            "type": "string"
+          },
+          "billingType": {
+            "type": "string"
+          },
+          "cancelledBillingDocument": {
+            "type": "string",
+            "nullable": true
+          },
+          "productId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "distributorId": {
+            "type": "string"
+          },
+          "distributorCode": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "netAmount": {
+            "type": "string",
+            "description": "Exact signed decimal text"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Exact signed decimal text"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "sourceRowNumber": {
+            "type": "number"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileSha256": {
+            "type": "string"
+          },
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "sourceFileStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RETAINED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "billingDocument",
+          "billingItem",
+          "billingDate",
+          "billingType",
+          "cancelledBillingDocument",
+          "productId",
+          "sku",
+          "distributorId",
+          "distributorCode",
+          "customerId",
+          "customerCode",
+          "netAmount",
+          "currency",
+          "quantity",
+          "unit",
+          "batchId",
+          "sourceRowNumber",
+          "fileName",
+          "fileSha256",
+          "templateVersionId",
+          "rulesVersion",
+          "sourceFileStatus"
+        ]
+      },
+      "TransactionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TransactionSubsetDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionLineageDto"
+            }
+          }
+        },
+        "required": [
+          "organizationId",
+          "currency",
+          "from",
+          "to",
+          "total",
+          "limit",
+          "offset",
+          "summary",
+          "items"
         ]
       },
       "UnitsSoldDto": {
@@ -1841,6 +3318,192 @@
           "dataClassification",
           "months",
           "productId"
+        ]
+      },
+      "CreateReportDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "example": "2026-07"
+          },
+          "to": {
+            "type": "string",
+            "example": "2026-09"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Retry the same configuration with the same key; a new key captures a new snapshot"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "currency",
+          "idempotencyKey"
+        ]
+      },
+      "ReportConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "definitionVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "currency",
+          "unit",
+          "definitionVersion"
+        ]
+      },
+      "ReportSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ReportConfigurationDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "configuration",
+          "createdAt",
+          "expiresAt"
+        ]
+      },
+      "ReportListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSummaryDto"
+            }
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ]
+      },
+      "ReportPreviewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ReportConfigurationDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "snapshot": {
+            "type": "object",
+            "description": "Exact decimal-string snapshot preview, top 8 entity/unit ranks. Transaction detail collection omitted; use lineage paging or XLSX. See REPORT_EXPORTS.md."
+          }
+        },
+        "required": [
+          "id",
+          "configuration",
+          "createdAt",
+          "expiresAt",
+          "snapshot"
+        ]
+      },
+      "DiscrepancyDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "RESOLVED"
+            ]
+          }
+        },
+        "required": [
+          "description",
+          "status"
+        ]
+      },
+      "PilotAssessmentDto": {
+        "type": "object",
+        "properties": {
+          "manualMinutes": {
+            "type": "string",
+            "description": "Explicitly entered labor minutes; at most 10080, max two decimals"
+          },
+          "automatedMinutes": {
+            "type": "string",
+            "description": "Explicitly entered complete workflow labor minutes, not a server timing estimate"
+          },
+          "reviewed": {
+            "type": "boolean"
+          },
+          "discrepancies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscrepancyDto"
+            }
+          }
+        },
+        "required": [
+          "manualMinutes",
+          "automatedMinutes",
+          "reviewed",
+          "discrepancies"
         ]
       }
     }

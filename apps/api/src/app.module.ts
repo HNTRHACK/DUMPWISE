@@ -13,6 +13,7 @@ import { PostgresThrottlerStorage } from './security/postgres-throttler.storage.
 import { PrismaService } from './prisma/prisma.service.js';
 import { SalesModule } from './sales/sales.module.js';
 import { AnalyticsModule } from './analytics/analytics.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { AnalyticsModule } from './analytics/analytics.module.js';
     ImportsModule,
     SalesModule,
     AnalyticsModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],

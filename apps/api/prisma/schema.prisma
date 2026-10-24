@@ -72,6 +72,8 @@ model Organization {
   reconciliationResults ReconciliationResult[]
   auditEvents           AuditEvent[]
   importTemplates       ImportTemplateVersion[]
+  reportSnapshots       ReportSnapshot[]
+  pilotAssessments      PilotAssessment[]
 
   @@map("organizations")
 }
@@ -225,6 +227,44 @@ model ImportTemplateVersion {
   @@unique([organizationId, id])
   @@unique([organizationId, name, version])
   @@map("import_template_versions")
+}
+
+// Private bounded pilot exports. READY snapshots are immutable and expire from download.
+model ReportSnapshot {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  idempotencyKey String @map("idempotency_key") @db.Uuid
+  configuration  Json
+  snapshot       Json
+  xlsx           Bytes @db.ByteA
+  pptx           Bytes @db.ByteA
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assessments    PilotAssessment[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt])
+  @@map("report_snapshots")
+}
+
+// Append-only assessments preserve earlier discrepancy/review statements.
+model PilotAssessment {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String @map("organization_id") @db.Uuid
+  reportId         String @map("report_id") @db.Uuid
+  manualMinutes    Decimal @map("manual_minutes") @db.Decimal(8,2)
+  automatedMinutes Decimal @map("automated_minutes") @db.Decimal(8,2)
+  reviewed         Boolean
+  discrepancies    Json
+  createdByUserId  String @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  report           ReportSnapshot @relation(fields: [organizationId, reportId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([organizationId, reportId, createdAt])
+  @@map("pilot_assessments")
 }
 
 model Product {
