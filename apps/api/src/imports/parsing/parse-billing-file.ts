@@ -3,6 +3,7 @@ import { mapHeaders } from './header-mapping.js';
 import type { ImportIssue } from './issues.js';
 import { normalizeRow, type NormalizedRow } from './row-normalizer.js';
 import type { NumberFormat } from './value-parsers.js';
+import { mapTemplateHeaders, type TemplateMapping } from './template-mapping.js';
 
 export interface ParsedBillingFile {
   ok: boolean; // false = file-level failure, nothing should be imported
@@ -31,12 +32,13 @@ export function parseBillingFile(
   buffer: Buffer,
   limits: CsvLimits,
   numberFormat: NumberFormat = 'PLAIN',
+  template?: TemplateMapping,
 ): ParsedBillingFile {
   const empty = { rowsTotal: 0, rowsValid: 0, rowsInvalid: 0, rowsDuplicateInFile: 0 };
   const csv = readCsv(buffer, limits);
   if (!csv.ok) return { ok: false, rows: [], issues: csv.issues, stats: empty };
 
-  const mapping = mapHeaders(csv.headers);
+  const mapping = template ? mapTemplateHeaders(csv.headers, template) : mapHeaders(csv.headers);
   if (!mapping.ok) return { ok: false, rows: [], issues: mapping.issues, stats: empty };
 
   const issues: ImportIssue[] = [...mapping.issues];
@@ -44,7 +46,7 @@ export function parseBillingFile(
   let invalid = 0;
 
   csv.rows.forEach((cells, i) => {
-    const r = normalizeRow(cells, mapping.columns, i + 2, numberFormat);
+    const r = normalizeRow(cells, mapping.columns, i + 2, template?.numberFormat ?? numberFormat, template);
     issues.push(...r.issues);
     if (r.row) candidates.push(r.row);
     else invalid++;

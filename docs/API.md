@@ -1,84 +1,166 @@
-# API — Phase 1
+# API
 
 Base URL (development): `http://127.0.0.1:3001`
 Machine-readable spec: [openapi.json](openapi.json). Swagger UI is at `/docs` when
-`NODE_ENV` is not `production`, or when `ENABLE_API_DOCS=true`.
-
-Only implemented endpoints are listed. Imports and publication have no HTTP endpoints in
-Phase 1; they run through the operator CLI (see README).
+`NODE_ENV` is not `production` (or when `ENABLE_API_DOCS=true`).
 
 ## Conventions
 
 - JSON responses. Money and quantities are **decimal strings** (`"899.79"`), never floats.
 - Months are `YYYY-MM`. Timestamps are ISO-8601 UTC.
-- Query parameters are validated. Unknown parameters are rejected with 400.
-- Every error has the same shape:
+- Inputs are validated. Unknown body or query properties are rejected with 400.
+- Every error has the same shape. `401` responses also carry `WWW-Authenticate: Bearer realm="dumpwise"`.
 
 ```json
-{
-  "statusCode": 403,
-  "error": "Forbidden",
-  "message": "No access to this organization",
-  "path": "/v1/sales/monthly",
-  "timestamp": "2026-10-22T19:53:26.244Z"
-}
+{ "statusCode": 403, "error": "Forbidden", "message": "No access to this organization",
+  "path": "/v1/sales/monthly", "timestamp": "2026-10-22T19:53:26.244Z" }
 ```
 
-Unexpected server errors return `500` with a generic message. Details are logged on the
-server only.
+## Authentication
 
-## `GET /health`
+1. `POST /v1/auth/login` with e-mail and password → token pair.
+2. Send `Authorization: Bearer <accessToken>` on every protected request.
+3. The access token lives **15 minutes**. Before it expires, call `POST /v1/auth/refresh`. You get a **new** access token *and* a **new** refresh token, and the old ones stop working.
+4. A session ends after **7 days** at the latest (`sessionExpiresAt`). Refreshing does not extend it, so log in again after that.
 
-Public. Reports service and database status.
+Tokens are opaque random strings (`dwa_…` access, `dwr_…` refresh). Treat them like
+passwords: never log them, and never put them in URLs.
 
-```powershell
-Invoke-RestMethod http://127.0.0.1:3001/health
-```
+## Authorization
 
-`200 OK`
+Organization-scoped endpoints need the header `X-Organization-Id: <uuid>`. The caller must
+be a member of that organization:
+
+| Role | Read data and batches | Upload imports | Publish batches |
+|---|---|---|---|
+| VIEWER | ✓ | | |
+| ANALYST | ✓ | ✓ | |
+| OWNER | ✓ | ✓ | ✓ |
+
+Not a member, or the organization does not exist → **403** (the same answer for both). A
+batch id belonging to another organization → **404**.
+
+## Endpoints
+
+### `GET /health` — public
+`200 {"status":"ok","service":"dumpwise-api","timestamp":"…","checks":{"database":"up"}}`, or
+`503` with `"database":"down"`.
+
+### `POST /v1/auth/login` — public, rate-limited (10/min per IP)
+Body `{"email": "...", "password": "..."}` → `200`:
 ```json
-{ "status": "ok", "service": "dumpwise-api", "timestamp": "2026-10-22T19:53:26.194Z", "checks": { "database": "up" } }
+{ "tokenType": "Bearer", "accessToken": "dwa_…", "accessTokenExpiresAt": "…",
+  "refreshToken": "dwr_…", "sessionExpiresAt": "…" }
 ```
+Response carries `Cache-Control: no-store`. Any failure (unknown e-mail, wrong password,
+locked or disabled account) → `401 "Invalid email or password"`. After 5 consecutive
+failures the account is locked for 15 minutes. Too many requests → `429`.
 
-`503 Service Unavailable` with `"status": "error"` and `"database": "down"` when PostgreSQL is unreachable.
+### `POST /v1/auth/refresh` — public, rate-limited
+Body `{"refreshToken": "dwr_…"}` → `200` with a new token pair. `401` if the token is unknown,
+expired or revoked. **Reusing an already-rotated refresh token revokes the whole session**:
+this is treated as token theft.
 
-## `GET /v1/sales/monthly`
+### `POST /v1/auth/logout` — bearer
+`204`. The session is revoked immediately; its access and refresh tokens stop working.
 
-Protected and organization-scoped. Returns monthly net sales from **published** batches only.
+### `POST /v1/auth/change-password` — bearer, rate-limited
+Body `{"currentPassword": "...", "newPassword": "..."}` → `204`. The new password must be
+12–128 characters, contain at least 5 different characters, and not contain the e-mail
+name or common words. Every **other** session of the user is revoked. Wrong current
+password → `403` (counts toward lockout).
 
-| Input | Where | Rules |
+### `GET /v1/auth/me` — bearer
+`200 {"id","email","displayName","memberships":[{"organizationId","organizationName","organizationSlug","dataClassification","role"}]}`
+
+### `POST /v1/imports` — bearer + org header, OWNER/ANALYST
+`multipart/form-data` with parts:
+
+| Part | Required | Content |
 |---|---|---|
-| Credentials | (identity provider) | **Not available in Phase 1: every call returns 401** |
-| `X-Organization-Id` | header | Required UUID; the caller must be a member (any role) |
-| `from` | query | Optional `YYYY-MM`, inclusive |
-| `to` | query | Optional `YYYY-MM`, inclusive; `from ≤ to`; at most 36 months when both are given |
+| `file` | yes | SAP billing CSV, UTF-8, at most `IMPORT_MAX_BYTES` (20 MiB) |
+| `controlTotals` | yes | Control totals JSON, at most 1 MiB |
+| `numberFormat` | no | `PLAIN` (default) or `EN_GROUPED` |
 
-`200 OK` (as produced in the e2e harness)
+Runs the full pipeline (see ARCHITECTURE.md). Responses:
+- `201` with header `Location: /v1/imports/<batchId>`: a new batch record exists. **Check `outcome`**: `IMPORTED`, `FAILED_VALIDATION` or `RECONCILIATION_FAILED`.
+- `200` with `outcome: "ALREADY_IMPORTED"`: this exact file was imported before; nothing changed.
+- `400`: missing parts, unexpected parts or fields, oversized upload, or invalid JSON.
+
+Body: `{ outcome, batchId, status, stats{rowsTotal,rowsValid,rowsInvalid,rowsDuplicateInFile,rowsAlreadyImported,rowsInserted}, reconciliation[{metric,month,currency,unit,expected,actual,passed}], issues[{severity,code,message,line?,field?}] }`
+
+### `GET /v1/imports?limit=20&offset=0` — bearer + org header, any role
+`200 { items: [batch summary], total, limit, offset }`, newest first. `limit` ≤ 100.
+
+### `GET /v1/imports/{batchId}` — bearer + org header, any role
+`200`: the batch summary plus `issues` (≤ 500) and all `reconciliation` checks. `404` if the
+batch is not in this organization.
+
+### `POST /v1/imports/{batchId}/publish` — bearer + org header, OWNER
+`200`: batch summary with `status: "PUBLISHED"`. `409 "Publication blocked: …"` unless
+reconciliation passed. `404` if the batch is not in this organization.
+
+### `GET /v1/sales/monthly?from=YYYY-MM&to=YYYY-MM` — bearer + org header, any role
+Monthly net sales from **published** batches only:
 ```json
-{
-  "organizationId": "4f5c…",
-  "dataClassification": "SYNTHETIC",
-  "months": [
-    {
-      "month": "2026-09",
-      "currency": "INR",
-      "totalNetSales": "899.79",
-      "transactionCount": 5,
-      "unitsSold": [{ "unit": "EA", "quantity": "9.000" }]
-    }
-  ]
-}
+{ "organizationId": "…", "dataClassification": "SYNTHETIC",
+  "months": [ { "month": "2026-09", "currency": "INR", "totalNetSales": "899.79",
+                "transactionCount": 5, "unitsSold": [{ "unit": "EA", "quantity": "9.000" }] } ] }
 ```
+- Invoices add; credit memos, returns and cancellations subtract.
+- `transactionCount` counts billing line items.
+- Units are reported per sales unit and never added across units. Currencies are never mixed or converted.
+- `from ≤ to`; at most 36 months when both are given.
 
-Field meanings:
-- `totalNetSales`: sum of signed net values. Invoices are added; credit memos, returns and cancellations are subtracted.
-- `transactionCount`: number of billing **line items** (all billing types).
-- `unitsSold`: signed quantity **per sales unit**. Different units are never added together.
-- One entry per (month, currency). Currencies are never mixed or converted.
-- `dataClassification`: `SYNTHETIC` means fictional demo data.
+## Phase 4 analytics (implemented)
 
-| Status | When |
+All four GET routes require a live bearer session and X-Organization-Id membership. OWNER, ANALYST and VIEWER can read; reporting never grants write permissions.
+
+| Route | Response |
 |---|---|
-| 400 | Missing or invalid `X-Organization-Id`, invalid month, `from > to`, unknown query parameter |
-| 401 | Caller not authenticated (currently: always) |
-| 403 | Caller is not a member of the organization, or the organization does not exist (same answer, so existence is not revealed) |
+| /v1/analytics/products | Ranked SKU/unit rows and full-filter KPI totals |
+| /v1/analytics/distributors | Ranked sold-to distributor/unit rows and KPI totals |
+| /v1/analytics/customers | Ranked ship-to customer/unit rows and KPI totals |
+| /v1/analytics/products/:id/trend | MonthlySalesResponseDto plus productId, filtered to that product |
+
+Required query: from and to (inclusive YYYY-MM, 2000..2099), currency (three uppercase letters). Range is 1..36 months. Optional unit is an uppercase alphanumeric code of up to 10 characters.
+
+List-only query: search (literal case-insensitive substring of code/name, max 100 characters), sort (netRevenue, transactionCount, code, netQuantity), direction (asc/desc), limit (1..100, default 20), offset (0..100000, default 0). netQuantity sorting requires one unit. Stable ties use entity id and unit. Pagination counts entity/unit rows; the same SKU may occupy multiple rows. All unrecognized query fields are rejected. Trend rejects list-only options.
+
+Example: GET /v1/analytics/products?from=2026-07&to=2026-09&currency=INR&unit=EA&sort=netRevenue&direction=desc&limit=20&offset=0
+
+Each list row exposes id, code, nullable name, unit, netRevenue, creditedAmount (G2), returnedAmount (RE), cancelledAmount (S1), netQuantity, transactionCount, previousRevenue, nullable growthPercent and growthReason. Monetary/quantity/percentage values are decimal strings; counts are billing line items, not invoice documents or unique customers. Credits/returns/cancellations are positive magnitudes already subtracted in signed netRevenue, not amounts to subtract again.
+
+The response includes organizationId, currency, from, to, previousFrom, previousTo, items, total, limit, offset and summary. Summary covers ALL matching current-period rows before pagination, not only the displayed page. Its units array keeps quantities separate. Revenue can be added across units within the selected currency; quantities cannot.
+
+Growth compares the requested N months to the immediately preceding N months, for the same entity/unit/filter/currency. Every month in both periods must contain at least one eligible line and the previous net revenue must be positive. Otherwise growthPercent is null and growthReason explains incomplete coverage or a zero/negative base. Current negative revenue yields a valid negative growth result when the base qualifies. Missing activity is not proof of zero sales or complete source coverage.
+
+Only PUBLISHED batches with reconciliation_status PASSED are included. Product ids from other organizations return 404 to a member of the requested organization; non-members receive 403. Trends omit absent months; clients render those as gaps. The web app uses the same four allowlisted BFF GET routes at /api/v1/analytics/... . OpenAPI is generated in docs/openapi.json.
+
+## Phase 5 additions
+
+All routes below use bearer sessions plus X-Organization-Id, actual membership and transaction-local
+RLS context. Detailed source operations require OWNER/ANALYST; only OWNER approves templates.
+
+| Method / path | Contract |
+|---|---|
+| POST /v1/import-templates | Immutable draft name, description, version, strict declarative mapping |
+| GET /v1/import-templates | limit 1..100, offset 0..10000 |
+| GET /v1/import-templates/:id | Mapping and human-readable interpretation |
+| POST /v1/import-templates/:id/approve | OWNER financial interpretation approval |
+| POST /v1/import-templates/:id/preview | Multipart CSV file; no business writes; NOT_RUN reconciliation |
+| POST /v1/imports | Existing multipart contract plus optional approved templateVersionId; no numberFormat override with template |
+| GET /v1/sales/transactions | Required from/to/currency, optional unit/entity/batch/transaction UUIDs and dimension/literal search; full-subset totals + bounded page |
+| GET /v1/sales/transactions/:id | Same report scope, one authorized published source item or 404 |
+| POST /v1/reports | 3/6/12-month from/to, one currency, optional unit, UUID idempotencyKey |
+| GET /v1/reports | Paginated unexpired private report metadata |
+| GET /v1/reports/:id | Frozen preview and metadata; transaction collection omitted |
+| GET /v1/reports/:id/xlsx | Authorized no-store attachment, seven-day access expiry |
+| GET /v1/reports/:id/pptx | Same snapshot, editable native tables/text |
+| POST /v1/reports/:id/pilot | Entered manualMinutes/automatedMinutes decimal text, reviewed boolean, bounded discrepancy descriptions/statuses |
+| GET /v1/reports/:id/pilot | Paginated append-only assessments and frozen source/check evidence |
+
+See REPORT_TEMPLATE_SPEC.md, DATA_LINEAGE.md, REPORT_EXPORTS.md and PILOT_VALIDATION.md for
+field definitions, precision policy, source evidence limits and supported pilot workflow.
+The generated OpenAPI includes these routes and request/response DTOs. No endpoint accepts
+arbitrary SQL/executable mappings, cross-currency aggregation or financial rule overrides.

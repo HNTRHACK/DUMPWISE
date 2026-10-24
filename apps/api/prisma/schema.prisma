@@ -71,21 +71,86 @@ model Organization {
   salesTransactions     SalesTransaction[]
   reconciliationResults ReconciliationResult[]
   auditEvents           AuditEvent[]
+  importTemplates       ImportTemplateVersion[]
+  reportSnapshots       ReportSnapshot[]
+  pilotAssessments      PilotAssessment[]
 
   @@map("organizations")
 }
 
 model User {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email       String   @unique @db.VarChar(254) // stored lower-case
-  displayName String   @map("display_name") @db.VarChar(120)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email             String    @unique @db.VarChar(254) // stored lower-case
+  displayName       String    @map("display_name") @db.VarChar(120)
+  // "scrypt$N$r$p$salt$hash" (see src/auth/password-hasher.ts). NULL = cannot log in.
+  passwordHash      String?   @map("password_hash") @db.VarChar(255)
+  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz(3)
+  // DEPRECATED since Phase 2B (per-account hard lockout was a denial-of-service lever).
+  // No longer read or written; kept so no data is dropped without approval.
+  failedLoginCount  Int       @default(0) @map("failed_login_count")
+  lockedUntil       DateTime? @map("locked_until") @db.Timestamptz(3)
+  disabledAt        DateTime? @map("disabled_at") @db.Timestamptz(3)
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  memberships Membership[]
-  auditEvents AuditEvent[]
+  memberships  Membership[]
+  auditEvents  AuditEvent[]
+  authSessions AuthSession[]
+  loginSources UserLoginSource[]
 
   @@map("users")
+}
+
+// One login session. Tokens are random secrets given to the client ONCE; only their
+// SHA-256 hashes are stored, so a database leak does not leak usable tokens.
+model AuthSession {
+  id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                    String    @map("user_id") @db.Uuid
+  accessTokenHash           String    @unique @map("access_token_hash") @db.Char(64)
+  accessExpiresAt           DateTime  @map("access_expires_at") @db.Timestamptz(3)
+  refreshTokenHash          String    @unique @map("refresh_token_hash") @db.Char(64)
+  // Hash of the refresh token that was rotated away; presenting it again = token theft.
+  previousRefreshTokenHash  String?   @unique @map("previous_refresh_token_hash") @db.Char(64)
+  expiresAt                 DateTime  @map("expires_at") @db.Timestamptz(3) // absolute session end
+  lastRefreshedAt           DateTime? @map("last_refreshed_at") @db.Timestamptz(3)
+  lastSeenAt                DateTime? @map("last_seen_at") @db.Timestamptz(3) // updated at most once a minute
+  userAgent                 String?   @map("user_agent") @db.VarChar(200) // helps users recognise their devices
+  revokedAt                 DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason             String?   @map("revoked_reason") @db.VarChar(40)
+  createdAt                 DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("auth_sessions")
+}
+
+// Networks a user has successfully logged in from: SHA-256(user id + client IP), never the
+// raw IP. While an account is under a distributed password attack, only known sources may log in.
+model UserLoginSource {
+  userId        String   @map("user_id") @db.Uuid
+  sourceHash    String   @map("source_hash") @db.Char(64)
+  firstSeenAt   DateTime @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSuccessAt DateTime @default(now()) @map("last_success_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@id([userId, sourceHash])
+  @@map("user_login_sources")
+}
+
+// Shared fixed-window counters used by the HTTP rate limiter (keys from @nestjs/throttler)
+// and by login-abuse protection (keys "login:<kind>:<hash>"). Shared by all API instances;
+// time comes from the database clock.
+model RateLimitBucket {
+  key             String    @id @db.VarChar(160)
+  hits            Int
+  windowExpiresAt DateTime  @map("window_expires_at") @db.Timestamptz(3)
+  blockedUntil    DateTime? @map("blocked_until") @db.Timestamptz(3)
+
+  @@index([windowExpiresAt])
+  @@map("rate_limit_buckets")
 }
 
 model Membership {
@@ -126,15 +191,80 @@ model ImportBatch {
   publishedAt          DateTime?            @map("published_at") @db.Timestamptz(3)
   createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  templateVersionId    String?              @map("template_version_id") @db.Uuid
+  rulesVersion         String               @default("sap-billing-signs-v1") @map("rules_version") @db.VarChar(80)
 
   organization          Organization           @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   salesTransactions     SalesTransaction[]
   reconciliationResults ReconciliationResult[]
+  templateVersion       ImportTemplateVersion? @relation(fields: [organizationId, templateVersionId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([organizationId, id])
   @@index([organizationId, status])
   @@index([organizationId, fileSha256])
   @@map("import_batches")
+}
+
+// Every row is a version. Edits create another row; approval does not change mapping data.
+model ImportTemplateVersion {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String   @map("organization_id") @db.Uuid
+  name             String   @db.VarChar(120)
+  description      String   @db.VarChar(1000)
+  sourceType       String   @default("SAP_BILLING_CSV") @map("source_type") @db.VarChar(40)
+  version          Int
+  status           String   @default("DRAFT") @db.VarChar(20)
+  mapping          Json
+  rulesVersion     String   @default("sap-billing-signs-v1") @map("rules_version") @db.VarChar(80)
+  createdByUserId   String   @map("created_by_user_id") @db.Uuid
+  approvedByUserId  String?  @map("approved_by_user_id") @db.Uuid
+  approvedAt       DateTime? @map("approved_at") @db.Timestamptz(3)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  importBatches ImportBatch[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, name, version])
+  @@map("import_template_versions")
+}
+
+// Private bounded pilot exports. READY snapshots are immutable and expire from download.
+model ReportSnapshot {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  idempotencyKey String @map("idempotency_key") @db.Uuid
+  configuration  Json
+  snapshot       Json
+  xlsx           Bytes @db.ByteA
+  pptx           Bytes @db.ByteA
+  createdByUserId String @map("created_by_user_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assessments    PilotAssessment[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, createdAt])
+  @@map("report_snapshots")
+}
+
+// Append-only assessments preserve earlier discrepancy/review statements.
+model PilotAssessment {
+  id               String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String @map("organization_id") @db.Uuid
+  reportId         String @map("report_id") @db.Uuid
+  manualMinutes    Decimal @map("manual_minutes") @db.Decimal(8,2)
+  automatedMinutes Decimal @map("automated_minutes") @db.Decimal(8,2)
+  reviewed         Boolean
+  discrepancies    Json
+  createdByUserId  String @map("created_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  report           ReportSnapshot @relation(fields: [organizationId, reportId], references: [organizationId, id], onDelete: Restrict, onUpdate: Restrict)
+  @@index([organizationId, reportId, createdAt])
+  @@map("pilot_assessments")
 }
 
 model Product {
@@ -243,9 +373,10 @@ model ReconciliationResult {
 }
 
 // Append-only: the runtime DB role is granted INSERT and SELECT only.
+// organization_id is NULL for user-level security events (login, logout, password change).
 model AuditEvent {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
   actorUserId    String?  @map("actor_user_id") @db.Uuid
   action         String   @db.VarChar(80)
   entityType     String   @map("entity_type") @db.VarChar(80)
@@ -253,9 +384,10 @@ model AuditEvent {
   metadata       Json     @default("{}")
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
-  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actor        User?         @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
 
   @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
   @@map("audit_events")
 }

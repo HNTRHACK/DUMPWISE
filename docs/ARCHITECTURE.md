@@ -7,7 +7,7 @@
  HTTP client ──► │ ValidationPipe → OrganizationAccessGuard → Controller → Service    │
  (127.0.0.1)     │        │                    │                                       │
                  │  AllExceptionsFilter   Authenticator (DI token)                     │
-                 │                        └ DisabledAuthenticator (Phase 1: always 401)│
+                 │                        └ BearerSessionAuthenticator (auth_sessions) │
  Operator CLI ─► │ NestFactory.createApplicationContext → same services, same rules   │
                  │                                                                     │
                  │ PrismaService (runtime role dumpwise_app) ──────────────┐           │
@@ -21,9 +21,10 @@
 |---|---|
 | `ConfigModule` + `config/env.ts` | Loads `.env`, validates every variable with zod, refuses to start on bad config |
 | `PrismaModule` | One shared database client using the restricted runtime role |
-| `AuthModule` | `Authenticator` interface (who are you?) and `OrganizationAccessService`/guard (may you act on this organization?) |
+| `AuthModule` | Login/sessions (`AuthService`, `/v1/auth/*`), `Authenticator` (who are you?), `OrganizationAccessService` + guards (may you act on this organization?) |
+| `ThrottlerModule` | Per-IP rate limits (global + strict limit on credential routes) |
 | `AuditModule` | Append-only audit events |
-| `ImportsModule` | Import pipeline + publication (no HTTP controller in Phase 1) |
+| `ImportsModule` | Import pipeline + publication, HTTP controller `/v1/imports` |
 | `SalesModule` | `GET /v1/sales/monthly` |
 | `HealthController` | `GET /health` |
 | `cli/dumpwise.ts` | Operator commands: `seed-synthetic`, `import`, `publish`, `monthly`, `openapi` |
@@ -145,17 +146,92 @@ Analysts can import but cannot publish (separation of duties).
 
 ## Authentication vs. authorization
 
-- **Authentication** (`Authenticator` interface, DI token `AUTHENTICATOR`) identifies the caller. Phase 1 binds `DisabledAuthenticator`, which identifies nobody, so all protected routes return 401. The e2e tests override the binding with `TestHeaderAuthenticator`, which lives in `test/` and is not part of the build.
-- **Authorization** (`OrganizationAccessService`) is real. It reads the `Membership` row for (user, organization) from the database and checks the role. Services receive an `OrganizationAccess` object and use *its* `organizationId` in every query.
+```
+Request ─► ThrottlerGuard (global; strict "auth" limit on @AuthRateLimited routes)
+        ─► AuthenticatedGuard / OrganizationAccessGuard
+              1. Authenticator (DI token AUTHENTICATOR → BearerSessionAuthenticator)
+                   "Authorization: Bearer dwa_…" → SHA-256 → auth_sessions row
+                   live = not revoked, access not expired, session not expired, user not disabled
+                   → 401 otherwise
+              2. X-Organization-Id (UUID)                       → 400 otherwise
+              3. Membership(user, org) + @RequireRoles(...)       → 403 otherwise
+        ─► Controller → Service (re-checks roles; queries filtered by verified organizationId)
+```
+
+- **Authentication** (`src/auth/auth.service.ts`): login, refresh rotation with reuse detection, logout, change password and operator reset. The `Authenticator` interface stays, so an OIDC/JWT authenticator can be bound later without touching authorization.
+- **Authorization** (`OrganizationAccessService`) reads the `Membership` row for (user, organization) and checks the role. Services receive an `OrganizationAccess` object and use *its* `organizationId` in every query.
+
+### Session model
+
+| Item | Lifetime | Stored as |
+|---|---|---|
+| Access token `dwa_…` | 15 min (`AUTH_ACCESS_TOKEN_TTL_SECONDS`) | SHA-256 in `auth_sessions.access_token_hash` |
+| Refresh token `dwr_…` | Single use; valid until the session ends | SHA-256 in `refresh_token_hash`; the previous one is kept in `previous_refresh_token_hash` for reuse detection |
+| Session | 7 days absolute (`AUTH_SESSION_TTL_SECONDS`); refresh never extends it | `auth_sessions.expires_at`; ended early by `revoked_at` |
+
+Why opaque tokens instead of JWTs: a single API both issues and checks the tokens, and it
+needs **instant revocation** (logout, password change, disabled user). Opaque tokens
+need no signing key to manage or leak, and cannot suffer JWT algorithm-confusion bugs. The
+cost is one indexed lookup per request.
+
+## HTTP API surface (Phase 2a)
+
+| Route | Guard | Roles |
+|---|---|---|
+| `GET /health` | — | public |
+| `POST /v1/auth/login`, `/refresh` | rate limit | public |
+| `POST /v1/auth/logout`, `/change-password`, `GET /v1/auth/me` | AuthenticatedGuard | any user |
+| `POST /v1/imports` | OrganizationAccessGuard | OWNER, ANALYST |
+| `GET /v1/imports`, `GET /v1/imports/:id`, `GET /v1/sales/monthly` | OrganizationAccessGuard | any member |
+| `POST /v1/imports/:id/publish` | OrganizationAccessGuard | OWNER |
+
+The import controller is a thin HTTP adapter: it validates the multipart request and calls
+the **unchanged** `ImportPipelineService` and `PublicationService`.
 
 ## Key decisions
 
 | Decision | Why |
 |---|---|
-| Imports via CLI, not HTTP | No upload endpoint should exist before real authentication |
+| Imports via CLI in Phase 1; HTTP since Phase 2a | No upload endpoint existed before real authentication |
 | Generator in Python, pipeline in TypeScript | Reconciliation only proves something if expected totals come from an independent implementation |
 | Roll back rows on failed reconciliation | Unpublishable rows would otherwise block a corrected re-import (unique key) |
 | Money as `DECIMAL(18,2)` and JSON strings | Floating point cannot represent ₹0.10 exactly |
 | Units never summed across units | 5 KG + 3 cartons is meaningless |
 | Currencies never mixed | No FX rates exist in Phase 1 |
 | Composite tenant foreign keys | The database itself prevents cross-organization links |
+
+## Phase 4 reporting architecture
+
+AnalyticsModule adds a read-only AnalyticsController, validated range/list DTOs and AnalyticsService. Both controller and service enforce membership. Every financial query uses TenantDb with transaction-local organization/user context, explicit organization predicates and composite tenant joins; RLS, grants and financial ingestion logic are unchanged.
+
+The list query uses CTEs: monthly groups facts by entity/month/unit, current selects the requested period, ranked aggregates current and equal-length preceding-period statistics, and page applies validated ordering plus LIMIT/OFFSET. The final SQL statement returns the page, count and full-filter summary from one statement snapshot. Monetary SUM uses PostgreSQL numeric; JSON casts sums to text before transport. Decimal.js (50-digit arithmetic context) formats amounts and calculates growth. Prisma.sql binds request values; Prisma.raw is used only for code-owned dimension identifiers and sort tokens verified against an allowlist.
+
+Existing indexes on sales_transactions (organization_id,billing_date), (organization_id,product_id), (organization_id,distributor_id), (organization_id,customer_id) and (organization_id,import_batch_id), plus composite master keys, support the tenant/date scan and joins. The upper bound is 72 months read (36 current plus 36 preceding). SQL pagination bounds transfer, not aggregation work: all matching groups still have to be aggregated and sorted. No production-scale query-plan benchmark was performed. Inspect EXPLAIN (ANALYZE, BUFFERS) on representative synthetic volumes before adding indexes/materialized rollups; high offsets remain more expensive than keyset pagination.
+
+The three Next.js pages share AnalyticsPage. Existing workspace state supplies organization and 3/6/12 completed-month ranges; existing monthly sales discovers available currencies and units. Typed BFF operations validate response schemas against OpenAPI. Each report is keyed by organization/range/currency, aborts superseded requests and shows loading/error states instead of relabelling stale results. Filter changes reset pagination. Product selection loads a trend through the BFF; seriesFor fills absent months with null and MonthlyChart converts to numbers only for geometry. Exact tables support the chart and preserve separate quantity units. No frontend analytics fixture is shipped in the application; browser-only synthetic mocks live under test/e2e.
+
+## Phase 5 pilot reporting workflow
+
+ImportsModule now includes immutable ImportTemplateVersion governance and read-only previews.
+Optional approved template context extends the original parser/normalizer; it does not replace
+sign rules, content hashing, SAP keys, SQL reconciliation, transaction rollback or OWNER publication.
+ImportBatch stores a tenant-composite template reference and stable rules version. Additive
+migrations enforce template/batch provenance immutability and FORCE RLS on new tables.
+
+Sales transactions expose source lineage with inherited analytics predicates, deterministic
+business ordering, bounded paging and full-subset totals in one SQL statement. Detailed source
+identifiers require OWNER/ANALYST. Normal reporting still supports VIEWER and unchanged Phase 4
+semantics. See DATA_LINEAGE.md for source-record and evidence limitations.
+
+ReportsModule reads bounded facts, source metadata and checks in a single SQL snapshot, then
+uses Decimal-safe in-memory grouping to encode XLSX/PPTX from one immutable value object.
+Organization/key advisory locking prevents duplicate generation for retried idempotent requests.
+Both formats and evidence are INSERTed atomically only after successful generation. Private
+bytea storage, download authorization/expiry, explicit grants and tenant composite keys maintain
+the existing role separation. Stable report-definition and metric versions are code-owned;
+configuration is frozen per organization snapshot. The browser receives an aggregate preview,
+not the full transaction collection. See REPORT_EXPORTS.md for ceilings and deferred jobs/storage.
+
+PilotAssessment is append-only, linked to a report by organization/id. Entered labor durations,
+review statements and bounded discrepancy notes remain distinguishable from machine timings
+and independently validated business outcomes. There is no forecasting or invented cost/margin.

@@ -32,6 +32,1067 @@
         ]
       }
     },
+    "/v1/auth/login": {
+      "post": {
+        "operationId": "AuthController_login",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password (same message for every failure reason)"
+          },
+          "429": {
+            "description": "Too many attempts from this client"
+          }
+        },
+        "summary": "Log in with e-mail and password; returns a new session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/refresh": {
+      "post": {
+        "operationId": "AuthController_refresh",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPairDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unknown, expired, revoked or reused refresh token"
+          }
+        },
+        "summary": "Exchange a refresh token for a new token pair (the old pair stops working)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthController_logout",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Revoke the current session immediately",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/change-password": {
+      "post": {
+        "operationId": "AuthController_changePassword",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "403": {
+            "description": "Current password is incorrect"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Change own password; all OTHER sessions are revoked",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "operationId": "AuthController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Current user and the organizations they belong to",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/imports": {
+      "post": {
+        "description": "201 when a new batch record was created (check `outcome`: IMPORTED, FAILED_VALIDATION or RECONCILIATION_FAILED). 200 with outcome ALREADY_IMPORTED when this exact file was imported before.",
+        "operationId": "ImportsController_upload",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file",
+                  "controlTotals"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "SAP billing export (CSV, UTF-8)"
+                  },
+                  "controlTotals": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Control totals JSON (expected monthly totals)"
+                  },
+                  "numberFormat": {
+                    "type": "string",
+                    "enum": [
+                      "PLAIN",
+                      "EN_GROUPED"
+                    ],
+                    "default": "PLAIN"
+                  },
+                  "templateVersionId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Approved immutable organization template; numberFormat must be omitted when selected"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ALREADY_IMPORTED",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultDto"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing file parts, oversized upload, or control totals not valid JSON"
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Not a member, or role not allowed"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Upload an SAP billing CSV with its control totals and run the import pipeline",
+        "tags": [
+          "imports"
+        ]
+      },
+      "get": {
+        "operationId": "ImportsController_list",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchListDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Not a member, or role not allowed"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "List import batches of the organization (newest first)",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/v1/imports/{batchId}": {
+      "get": {
+        "operationId": "ImportsController_get",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Not a member, or role not allowed"
+          },
+          "404": {
+            "description": "No such batch in this organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Batch details with issues and reconciliation checks",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/v1/imports/{batchId}/publish": {
+      "post": {
+        "operationId": "ImportsController_publish",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportBatchSummaryDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Not a member, or role not allowed"
+          },
+          "404": {
+            "description": "No such batch in this organization"
+          },
+          "409": {
+            "description": "Publication blocked: reconciliation did not pass"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Publish a batch whose reconciliation PASSED (OWNER only)",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/v1/import-templates": {
+      "post": {
+        "operationId": "ImportTemplatesController_create",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Create an immutable draft mapping version (OWNER/ANALYST)",
+        "tags": [
+          "import-templates"
+        ]
+      },
+      "get": {
+        "operationId": "ImportTemplatesController_list",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}": {
+      "get": {
+        "operationId": "ImportTemplatesController_get",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateDetailResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}/approve": {
+      "post": {
+        "operationId": "ImportTemplatesController_approve",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplateVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "OWNER explicitly approves mapping and financial interpretation",
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/import-templates/{id}/preview": {
+      "post": {
+        "operationId": "ImportTemplatesController_preview",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TemplatePreviewResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Read-only CSV validation preview; no import or reconciliation claim",
+        "tags": [
+          "import-templates"
+        ]
+      }
+    },
+    "/v1/sales/transactions": {
+      "get": {
+        "operationId": "SalesController_transactionsList",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transactionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "distributorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dimension",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "products",
+                "distributors",
+                "customers"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionsResponseDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Caller is not a member of the organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Published reconciled source lineage (OWNER/ANALYST); totals cover full filtered subset",
+        "tags": [
+          "sales"
+        ]
+      }
+    },
+    "/v1/sales/transactions/{id}": {
+      "get": {
+        "operationId": "SalesController_transaction",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "description": "Organization UUID the caller is a member of",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "transactionId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "distributorId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "customerId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "batchId",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "dimension",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "products",
+                "distributors",
+                "customers"
+              ]
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "default": "desc",
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionLineageDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, expired or revoked access token"
+          },
+          "403": {
+            "description": "Caller is not a member of the organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "sales"
+        ]
+      }
+    },
     "/v1/sales/monthly": {
       "get": {
         "operationId": "SalesController_monthly",
@@ -81,28 +1142,852 @@
             "description": "Invalid query or missing X-Organization-Id header"
           },
           "401": {
-            "description": "Not authenticated. In Phase 1 no identity provider is configured, so all requests receive 401."
+            "description": "Missing, expired or revoked access token"
           },
           "403": {
             "description": "Caller is not a member of the organization"
           }
         },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
         "summary": "Monthly net sales from published, reconciled import batches",
         "tags": [
           "sales"
+        ]
+      }
+    },
+    "/v1/analytics/products": {
+      "get": {
+        "operationId": "AnalyticsController_products",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Literal case-insensitive code/name substring",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "netRevenue",
+                "transactionCount",
+                "code",
+                "netQuantity"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid month range, currency, unit, filter, sort or pagination"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "No organization membership"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/v1/analytics/distributors": {
+      "get": {
+        "operationId": "AnalyticsController_distributors",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Literal case-insensitive code/name substring",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "netRevenue",
+                "transactionCount",
+                "code",
+                "netQuantity"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid month range, currency, unit, filter, sort or pagination"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "No organization membership"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/v1/analytics/customers": {
+      "get": {
+        "operationId": "AnalyticsController_customers",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Literal case-insensitive code/name substring",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "netRevenue",
+                "transactionCount",
+                "code",
+                "netQuantity"
+              ]
+            }
+          },
+          {
+            "name": "direction",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maximum": 100000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid month range, currency, unit, filter, sort or pagination"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "No organization membership"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/v1/analytics/products/{id}/trend": {
+      "get": {
+        "operationId": "AnalyticsController_trend",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-07",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "2026-09",
+              "type": "string"
+            }
+          },
+          {
+            "name": "currency",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "INR",
+              "type": "string"
+            }
+          },
+          {
+            "name": "unit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductTrendDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid month range, currency, unit, filter, sort or pagination"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "No organization membership"
+          },
+          "404": {
+            "description": "Product not found in the authorized organization"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "analytics"
+        ]
+      }
+    },
+    "/v1/reports": {
+      "post": {
+        "operationId": "ReportsController_create",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportSummaryDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Generate immutable private XLSX/PPTX from one published snapshot (max 5000 current+comparison facts)",
+        "tags": [
+          "reports"
+        ]
+      },
+      "get": {
+        "operationId": "ReportsController_list",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportListDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}": {
+      "get": {
+        "operationId": "ReportsController_get",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportPreviewDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/pilot": {
+      "post": {
+        "operationId": "ReportsController_assess",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PilotAssessmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Append user-entered pilot assessment; previous statements remain in history",
+        "tags": [
+          "reports"
+        ]
+      },
+      "get": {
+        "operationId": "ReportsController_assessments",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "offset",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 0,
+              "maximum": 10000,
+              "default": 0,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/xlsx": {
+      "get": {
+        "operationId": "ReportsController_xlsx",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
+        ]
+      }
+    },
+    "/v1/reports/{id}/pptx": {
+      "get": {
+        "operationId": "ReportsController_pptx",
+        "parameters": [
+          {
+            "name": "X-Organization-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "tags": [
+          "reports"
         ]
       }
     }
   },
   "info": {
     "title": "DUMPWISE API",
-    "description": "Phase 1 API. Only implemented endpoints are documented. Protected endpoints require authentication, which is not yet integrated: they currently return 401 to every caller.",
-    "version": "0.1.0",
+    "description": "Authenticate with POST /v1/auth/login, then send \"Authorization: Bearer <accessToken>\". Organization-scoped endpoints also require the X-Organization-Id header.",
+    "version": "0.2.0",
     "contact": {}
   },
   "tags": [],
   "servers": [],
   "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Opaque access token (dwa_…)"
+      }
+    },
     "schemas": {
       "HealthChecksDto": {
         "type": "object",
@@ -148,6 +2033,1022 @@
           "service",
           "timestamp",
           "checks"
+        ]
+      },
+      "LoginDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "example": "demo.analyst@example.invalid"
+          },
+          "password": {
+            "type": "string",
+            "format": "password"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ]
+      },
+      "TokenPairDto": {
+        "type": "object",
+        "properties": {
+          "tokenType": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "accessToken": {
+            "type": "string",
+            "description": "Send as \"Authorization: Bearer <accessToken>\". Short-lived."
+          },
+          "accessTokenExpiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "Single use: exchange at /v1/auth/refresh for a new pair."
+          },
+          "sessionExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Absolute end of the session; log in again after this."
+          }
+        },
+        "required": [
+          "tokenType",
+          "accessToken",
+          "accessTokenExpiresAt",
+          "refreshToken",
+          "sessionExpiresAt"
+        ]
+      },
+      "RefreshDto": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "example": "dwr_…"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "ChangePasswordDto": {
+        "type": "object",
+        "properties": {
+          "currentPassword": {
+            "type": "string",
+            "format": "password"
+          },
+          "newPassword": {
+            "type": "string",
+            "format": "password",
+            "description": "12–128 characters; long passphrases recommended"
+          }
+        },
+        "required": [
+          "currentPassword",
+          "newPassword"
+        ]
+      },
+      "MembershipDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "organizationSlug": {
+            "type": "string"
+          },
+          "dataClassification": {
+            "type": "string",
+            "enum": [
+              "SYNTHETIC",
+              "PRODUCTION"
+            ]
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "OWNER",
+              "ANALYST",
+              "VIEWER"
+            ]
+          }
+        },
+        "required": [
+          "organizationId",
+          "organizationName",
+          "organizationSlug",
+          "dataClassification",
+          "role"
+        ]
+      },
+      "MeDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "memberships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MembershipDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "displayName",
+          "memberships"
+        ]
+      },
+      "ImportStatsDto": {
+        "type": "object",
+        "properties": {
+          "rowsTotal": {
+            "type": "number"
+          },
+          "rowsValid": {
+            "type": "number"
+          },
+          "rowsInvalid": {
+            "type": "number"
+          },
+          "rowsDuplicateInFile": {
+            "type": "number"
+          },
+          "rowsAlreadyImported": {
+            "type": "number"
+          },
+          "rowsInserted": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rowsTotal",
+          "rowsValid",
+          "rowsInvalid",
+          "rowsDuplicateInFile",
+          "rowsAlreadyImported",
+          "rowsInserted"
+        ]
+      },
+      "ReconciliationCheckDto": {
+        "type": "object",
+        "properties": {
+          "metric": {
+            "type": "string",
+            "enum": [
+              "NET_AMOUNT",
+              "LINE_COUNT",
+              "QUANTITY"
+            ]
+          },
+          "month": {
+            "type": "string",
+            "example": "2026-09"
+          },
+          "currency": {
+            "type": "string",
+            "nullable": true
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "expected": {
+            "type": "string",
+            "description": "Decimal string"
+          },
+          "actual": {
+            "type": "string",
+            "description": "Decimal string"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "metric",
+          "month",
+          "currency",
+          "unit",
+          "expected",
+          "actual",
+          "passed"
+        ]
+      },
+      "ImportIssueDto": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "example": "INVALID_DATE"
+          },
+          "message": {
+            "type": "string"
+          },
+          "line": {
+            "type": "number"
+          },
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "severity",
+          "code",
+          "message"
+        ]
+      },
+      "ImportResultDto": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "IMPORTED",
+              "ALREADY_IMPORTED",
+              "FAILED_VALIDATION",
+              "RECONCILIATION_FAILED"
+            ]
+          },
+          "batchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROCESSING",
+              "FAILED_VALIDATION",
+              "RECONCILIATION_FAILED",
+              "READY_TO_PUBLISH",
+              "PUBLISHED"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ImportStatsDto"
+          },
+          "reconciliation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationCheckDto"
+            }
+          },
+          "issues": {
+            "description": "At most 500 issues",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportIssueDto"
+            }
+          }
+        },
+        "required": [
+          "outcome",
+          "batchId",
+          "status",
+          "stats",
+          "reconciliation",
+          "issues"
+        ]
+      },
+      "ImportBatchSummaryDto": {
+        "type": "object",
+        "properties": {
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileSha256": {
+            "type": "string"
+          },
+          "fileSizeBytes": {
+            "type": "number"
+          },
+          "isSynthetic": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROCESSING",
+              "FAILED_VALIDATION",
+              "RECONCILIATION_FAILED",
+              "READY_TO_PUBLISH",
+              "PUBLISHED"
+            ]
+          },
+          "reconciliationStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN",
+              "PASSED",
+              "FAILED"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ImportStatsDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "publishedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "templateVersionId",
+          "rulesVersion",
+          "id",
+          "fileName",
+          "fileSha256",
+          "fileSizeBytes",
+          "isSynthetic",
+          "status",
+          "reconciliationStatus",
+          "stats",
+          "createdAt",
+          "createdByUserId",
+          "publishedAt",
+          "publishedByUserId"
+        ]
+      },
+      "ImportBatchListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportBatchSummaryDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "ImportBatchDetailDto": {
+        "type": "object",
+        "properties": {
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileSha256": {
+            "type": "string"
+          },
+          "fileSizeBytes": {
+            "type": "number"
+          },
+          "isSynthetic": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PROCESSING",
+              "FAILED_VALIDATION",
+              "RECONCILIATION_FAILED",
+              "READY_TO_PUBLISH",
+              "PUBLISHED"
+            ]
+          },
+          "reconciliationStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN",
+              "PASSED",
+              "FAILED"
+            ]
+          },
+          "stats": {
+            "$ref": "#/components/schemas/ImportStatsDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "publishedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "publishedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportIssueDto"
+            }
+          },
+          "reconciliation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReconciliationCheckDto"
+            }
+          }
+        },
+        "required": [
+          "templateVersionId",
+          "rulesVersion",
+          "id",
+          "fileName",
+          "fileSha256",
+          "fileSizeBytes",
+          "isSynthetic",
+          "status",
+          "reconciliationStatus",
+          "stats",
+          "createdAt",
+          "createdByUserId",
+          "publishedAt",
+          "publishedByUserId",
+          "issues",
+          "reconciliation"
+        ]
+      },
+      "CreateTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 1000
+          },
+          "version": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "mapping": {
+            "type": "object",
+            "description": "Strict declarative columns [{field,header}], dateFormat, numberFormat and documentTypes. See REPORT_TEMPLATE_SPEC.md."
+          }
+        },
+        "required": [
+          "name",
+          "description",
+          "version",
+          "mapping"
+        ]
+      },
+      "TemplateVersionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "SAP_BILLING_CSV"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "APPROVED"
+            ]
+          },
+          "mapping": {
+            "type": "object"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "approvedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "name",
+          "description",
+          "sourceType",
+          "version",
+          "status",
+          "mapping",
+          "rulesVersion",
+          "createdByUserId",
+          "approvedByUserId",
+          "approvedAt",
+          "createdAt"
+        ]
+      },
+      "TemplateListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateVersionResponseDto"
+            }
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "TemplateExplanationDto": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "header": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "interpretation": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "header",
+          "required",
+          "interpretation"
+        ]
+      },
+      "TemplateDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "SAP_BILLING_CSV"
+            ]
+          },
+          "version": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "APPROVED"
+            ]
+          },
+          "mapping": {
+            "type": "object"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "approvedByUserId": {
+            "type": "string",
+            "nullable": true,
+            "format": "uuid"
+          },
+          "approvedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "explanation": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateExplanationDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "name",
+          "description",
+          "sourceType",
+          "version",
+          "status",
+          "mapping",
+          "rulesVersion",
+          "createdByUserId",
+          "approvedByUserId",
+          "approvedAt",
+          "createdAt",
+          "explanation"
+        ]
+      },
+      "PreviewStatsDto": {
+        "type": "object",
+        "properties": {
+          "rowsTotal": {
+            "type": "number"
+          },
+          "rowsValid": {
+            "type": "number"
+          },
+          "rowsInvalid": {
+            "type": "number"
+          },
+          "rowsDuplicateInFile": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "rowsTotal",
+          "rowsValid",
+          "rowsInvalid",
+          "rowsDuplicateInFile"
+        ]
+      },
+      "TemplatePreviewResponseDto": {
+        "type": "object",
+        "properties": {
+          "templateVersionId": {
+            "type": "string"
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/PreviewStatsDto"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportIssueDto"
+            }
+          },
+          "issuesTruncated": {
+            "type": "boolean"
+          },
+          "mapping": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TemplateExplanationDto"
+            }
+          },
+          "sample": {
+            "description": "At most 10 normalized rows; signed amounts/quantities remain exact text",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "reconciliationStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RUN"
+            ]
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "templateVersionId",
+          "rulesVersion",
+          "status",
+          "ok",
+          "stats",
+          "issues",
+          "issuesTruncated",
+          "mapping",
+          "sample",
+          "reconciliationStatus",
+          "limitations"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "TransactionSubsetDto": {
+        "type": "object",
+        "properties": {
+          "netRevenue": {
+            "type": "string"
+          },
+          "transactionCount": {
+            "type": "number"
+          },
+          "units": {
+            "description": "Separate unit + exact signed quantity entries",
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "netRevenue",
+          "transactionCount",
+          "units"
+        ]
+      },
+      "TransactionLineageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "billingDocument": {
+            "type": "string"
+          },
+          "billingItem": {
+            "type": "string"
+          },
+          "billingDate": {
+            "type": "string"
+          },
+          "billingType": {
+            "type": "string"
+          },
+          "cancelledBillingDocument": {
+            "type": "string",
+            "nullable": true
+          },
+          "productId": {
+            "type": "string"
+          },
+          "sku": {
+            "type": "string"
+          },
+          "distributorId": {
+            "type": "string"
+          },
+          "distributorCode": {
+            "type": "string"
+          },
+          "customerId": {
+            "type": "string"
+          },
+          "customerCode": {
+            "type": "string"
+          },
+          "netAmount": {
+            "type": "string",
+            "description": "Exact signed decimal text"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "string",
+            "description": "Exact signed decimal text"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "batchId": {
+            "type": "string"
+          },
+          "sourceRowNumber": {
+            "type": "number"
+          },
+          "fileName": {
+            "type": "string"
+          },
+          "fileSha256": {
+            "type": "string"
+          },
+          "templateVersionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "rulesVersion": {
+            "type": "string"
+          },
+          "sourceFileStatus": {
+            "type": "string",
+            "enum": [
+              "NOT_RETAINED"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "billingDocument",
+          "billingItem",
+          "billingDate",
+          "billingType",
+          "cancelledBillingDocument",
+          "productId",
+          "sku",
+          "distributorId",
+          "distributorCode",
+          "customerId",
+          "customerCode",
+          "netAmount",
+          "currency",
+          "quantity",
+          "unit",
+          "batchId",
+          "sourceRowNumber",
+          "fileName",
+          "fileSha256",
+          "templateVersionId",
+          "rulesVersion",
+          "sourceFileStatus"
+        ]
+      },
+      "TransactionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/TransactionSubsetDto"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TransactionLineageDto"
+            }
+          }
+        },
+        "required": [
+          "organizationId",
+          "currency",
+          "from",
+          "to",
+          "total",
+          "limit",
+          "offset",
+          "summary",
+          "items"
         ]
       },
       "UnitsSoldDto": {
@@ -230,6 +3131,379 @@
           "organizationId",
           "dataClassification",
           "months"
+        ]
+      },
+      "AnalyticsRowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "unit": {
+            "type": "string"
+          },
+          "netRevenue": {
+            "type": "string"
+          },
+          "creditedAmount": {
+            "type": "string",
+            "description": "Positive magnitude of G2 credits"
+          },
+          "returnedAmount": {
+            "type": "string",
+            "description": "Positive magnitude of RE returns"
+          },
+          "cancelledAmount": {
+            "type": "string",
+            "description": "Positive magnitude of S1 cancellations"
+          },
+          "netQuantity": {
+            "type": "string"
+          },
+          "transactionCount": {
+            "type": "number"
+          },
+          "previousRevenue": {
+            "type": "string"
+          },
+          "growthPercent": {
+            "type": "string",
+            "nullable": true
+          },
+          "growthReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "unit",
+          "netRevenue",
+          "creditedAmount",
+          "returnedAmount",
+          "cancelledAmount",
+          "netQuantity",
+          "transactionCount",
+          "previousRevenue",
+          "growthPercent",
+          "growthReason"
+        ]
+      },
+      "AnalyticsSummaryDto": {
+        "type": "object",
+        "properties": {
+          "netRevenue": {
+            "type": "string"
+          },
+          "creditedAmount": {
+            "type": "string"
+          },
+          "returnedAmount": {
+            "type": "string"
+          },
+          "cancelledAmount": {
+            "type": "string"
+          },
+          "transactionCount": {
+            "type": "number"
+          },
+          "units": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnitsSoldDto"
+            }
+          }
+        },
+        "required": [
+          "netRevenue",
+          "creditedAmount",
+          "returnedAmount",
+          "cancelledAmount",
+          "transactionCount",
+          "units"
+        ]
+      },
+      "AnalyticsResponseDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "previousFrom": {
+            "type": "string"
+          },
+          "previousTo": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AnalyticsRowDto"
+            }
+          },
+          "summary": {
+            "$ref": "#/components/schemas/AnalyticsSummaryDto"
+          },
+          "total": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "organizationId",
+          "currency",
+          "from",
+          "to",
+          "previousFrom",
+          "previousTo",
+          "items",
+          "summary",
+          "total",
+          "limit",
+          "offset"
+        ]
+      },
+      "ProductTrendDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dataClassification": {
+            "type": "string",
+            "enum": [
+              "SYNTHETIC",
+              "PRODUCTION"
+            ]
+          },
+          "months": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MonthlySalesRowDto"
+            }
+          },
+          "productId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "organizationId",
+          "dataClassification",
+          "months",
+          "productId"
+        ]
+      },
+      "CreateReportDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "example": "2026-07"
+          },
+          "to": {
+            "type": "string",
+            "example": "2026-09"
+          },
+          "currency": {
+            "type": "string",
+            "example": "INR"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Retry the same configuration with the same key; a new key captures a new snapshot"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "currency",
+          "idempotencyKey"
+        ]
+      },
+      "ReportConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string",
+            "nullable": true
+          },
+          "definitionVersion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "currency",
+          "unit",
+          "definitionVersion"
+        ]
+      },
+      "ReportSummaryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ReportConfigurationDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "configuration",
+          "createdAt",
+          "expiresAt"
+        ]
+      },
+      "ReportListDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReportSummaryDto"
+            }
+          },
+          "limit": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "items",
+          "limit",
+          "offset"
+        ]
+      },
+      "ReportPreviewDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "configuration": {
+            "$ref": "#/components/schemas/ReportConfigurationDto"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "snapshot": {
+            "type": "object",
+            "description": "Exact decimal-string snapshot preview, top 8 entity/unit ranks. Transaction detail collection omitted; use lineage paging or XLSX. See REPORT_EXPORTS.md."
+          }
+        },
+        "required": [
+          "id",
+          "configuration",
+          "createdAt",
+          "expiresAt",
+          "snapshot"
+        ]
+      },
+      "DiscrepancyDto": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "RESOLVED"
+            ]
+          }
+        },
+        "required": [
+          "description",
+          "status"
+        ]
+      },
+      "PilotAssessmentDto": {
+        "type": "object",
+        "properties": {
+          "manualMinutes": {
+            "type": "string",
+            "description": "Explicitly entered labor minutes; at most 10080, max two decimals"
+          },
+          "automatedMinutes": {
+            "type": "string",
+            "description": "Explicitly entered complete workflow labor minutes, not a server timing estimate"
+          },
+          "reviewed": {
+            "type": "boolean"
+          },
+          "discrepancies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiscrepancyDto"
+            }
+          }
+        },
+        "required": [
+          "manualMinutes",
+          "automatedMinutes",
+          "reviewed",
+          "discrepancies"
         ]
       }
     }

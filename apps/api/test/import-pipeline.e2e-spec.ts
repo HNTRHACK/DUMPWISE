@@ -1,3 +1,4 @@
+import { fixtureDb } from './helpers.js';
 import { ForbiddenException, INestApplication } from '@nestjs/common';
 import { Decimal } from 'decimal.js';
 import { ImportPipelineService } from '../src/imports/import-pipeline.service.js';
@@ -14,8 +15,8 @@ describe('Import pipeline (database)', () => {
   let sales: SalesService;
 
   beforeAll(async () => {
-    app = await createTestApp({ testAuth: false });
-    prisma = app.get(PrismaService);
+    app = await createTestApp();
+    prisma = fixtureDb(app);
     pipeline = app.get(ImportPipelineService);
     publication = app.get(PublicationService);
     sales = app.get(SalesService);

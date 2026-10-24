@@ -16,6 +16,12 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 120_000,
     // The app under test connects to the isolated test database as the restricted role.
-    env: { NODE_ENV: 'test', DATABASE_URL: process.env['TEST_DATABASE_URL'] ?? '' },
+    // Rate limits are raised so tests can log in freely; rate-limit.e2e-spec.ts lowers them.
+    env: {
+      NODE_ENV: 'test',
+      DATABASE_URL: process.env['TEST_DATABASE_URL'] ?? '',
+      RATE_LIMIT_AUTH_PER_MINUTE: '10000',
+      RATE_LIMIT_DEFAULT_PER_MINUTE: '100000',
+    },
   },
 });

@@ -1,13 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import type { Request } from 'express';
+import { AuthService } from './auth.service.js';
 
 export interface AuthenticatedPrincipal {
   userId: string;
+  sessionId: string;
 }
 
 /**
  * Answers "WHO is calling?" (authentication). Returns null when the caller cannot be
- * identified. Implementations are swapped through dependency injection.
+ * identified. Implementations are swapped through dependency injection; a future OIDC
+ * (e.g. Microsoft Entra ID) authenticator would be another implementation of this interface.
  */
 export interface Authenticator {
   authenticate(req: Request): Promise<AuthenticatedPrincipal | null>;
@@ -15,15 +18,16 @@ export interface Authenticator {
 
 export const AUTHENTICATOR = Symbol('AUTHENTICATOR');
 
-/**
- * Phase 1 production default: no identity provider is integrated yet, so NOBODY is
- * authenticated and every protected endpoint answers 401. This is deliberate: protected
- * data APIs are not exposed behind fake authentication. Tests replace this provider
- * with a test-only authenticator that lives outside src/ and is never built or deployed.
- */
+const BEARER = /^Bearer ([A-Za-z0-9_-]{1,200})$/i;
+
+/** Reads "Authorization: Bearer <access token>" and resolves it to a live session. */
 @Injectable()
-export class DisabledAuthenticator implements Authenticator {
-  authenticate(): Promise<AuthenticatedPrincipal | null> {
-    return Promise.resolve(null);
+export class BearerSessionAuthenticator implements Authenticator {
+  constructor(private readonly auth: AuthService) {}
+
+  async authenticate(req: Request): Promise<AuthenticatedPrincipal | null> {
+    const match = BEARER.exec(req.header('authorization') ?? '');
+    if (!match) return null;
+    return this.auth.authenticateAccessToken(match[1]);
   }
 }

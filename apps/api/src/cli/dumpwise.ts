@@ -1,3 +1,7 @@
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../generated/prisma/client.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
+import { AuditService } from '../audit/audit.service.js';
 // Operator CLI for Phase 1. Runs the same services as the API (same authorization rules)
 // without starting an HTTP server. Usage: node dist/cli/dumpwise.js <command> [options]
 //
@@ -6,6 +10,10 @@
 //   publish  --org <slug> --actor <email> --batch <uuid>
 //   monthly  --org <slug> --actor <email> [--from YYYY-MM] [--to YYYY-MM]
 //   openapi  --out <file>
+//   create-user     --email <email> --name <display name>
+//   add-member      --org <slug> --email <email> --role OWNER|ANALYST|VIEWER
+//   reset-password  --email <email>     (prints a generated password ONCE; revokes sessions)
+import { randomBytes } from 'node:crypto';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { Logger } from '@nestjs/common';
@@ -13,6 +21,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module.js';
 import { buildOpenApiDocument } from '../app.setup.js';
+import { AuthService } from '../auth/auth.service.js';
 import { OrganizationAccessService } from '../auth/organization-access.service.js';
 import type { Env } from '../config/env.js';
 import { ImportPipelineService } from '../imports/import-pipeline.service.js';
@@ -38,6 +47,9 @@ const { positionals, values } = parseArgs({
     from: { type: 'string' },
     to: { type: 'string' },
     out: { type: 'string' },
+    email: { type: 'string' },
+    name: { type: 'string' },
+    role: { type: 'string' },
   },
 });
 
@@ -50,30 +62,41 @@ function need(name: keyof typeof values): string {
 const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
 const prisma = app.get(PrismaService);
 const log = new Logger('cli');
+let operator: PrismaClient | undefined;
+function provisioning(): PrismaClient {
+  if (!operator) {
+    const url = process.env['PROVISIONER_DATABASE_URL'];
+    if (!url) throw new Error('PROVISIONER_DATABASE_URL is required for operator commands');
+    if (new URL(url).username === new URL(process.env['DATABASE_URL']!).username) throw new Error('Provisioner and runtime roles must differ');
+    operator = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+  }
+  return operator;
+}
 
 async function resolve(): Promise<{ organizationId: string; userId: string }> {
-  const org = await prisma.organization.findUnique({ where: { slug: need('org') } });
   const user = await prisma.user.findUnique({ where: { email: need('actor').toLowerCase() } });
-  if (!org || !user) throw new Error('Unknown organization or actor');
+  if (!user) throw new Error('Unknown organization or actor');
+  const org = await app.get(TenantDb).run({ userId: user.id }, tx => tx.organization.findUnique({ where: { slug: need('org') } }));
+  if (!org) throw new Error('Unknown organization or actor');
   return { organizationId: org.id, userId: user.id };
 }
 
 try {
   switch (positionals[0]) {
     case 'seed-synthetic': {
-      const org = await prisma.organization.upsert({
+      const org = await provisioning().organization.upsert({
         where: { slug: SYNTHETIC_ORG.slug },
         update: {},
         create: { ...SYNTHETIC_ORG, dataClassification: 'SYNTHETIC' },
       });
       if (org.dataClassification !== 'SYNTHETIC') throw new Error(`${org.slug} exists and is not SYNTHETIC`);
       for (const u of SYNTHETIC_USERS) {
-        const user = await prisma.user.upsert({
+        const user = await provisioning().user.upsert({
           where: { email: u.email },
           update: {},
           create: { email: u.email, displayName: u.displayName },
         });
-        await prisma.membership.upsert({
+        await provisioning().membership.upsert({
           where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
           update: {},
           create: { organizationId: org.id, userId: user.id, role: u.role },
@@ -130,13 +153,45 @@ try {
       console.log(`OpenAPI document written to ${need('out')}`);
       break;
     }
+    case 'create-user': {
+      const email = need('email').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 254) throw new Error('Invalid --email');
+      const user = await provisioning().user.create({ data: { email, displayName: need('name').slice(0, 120) } });
+      console.log(JSON.stringify({ userId: user.id, email: user.email, note: 'No password yet: run reset-password' }, null, 2));
+      break;
+    }
+    case 'add-member': {
+      const role = need('role');
+      if (role !== 'OWNER' && role !== 'ANALYST' && role !== 'VIEWER') throw new Error('--role must be OWNER, ANALYST or VIEWER');
+      const org = await provisioning().organization.findUnique({ where: { slug: need('org') } });
+      const user = await provisioning().user.findUnique({ where: { email: need('email').toLowerCase() } });
+      if (!org || !user) throw new Error('Unknown organization or user');
+      const m = await provisioning().membership.upsert({
+        where: { organizationId_userId: { organizationId: org.id, userId: user.id } },
+        update: { role },
+        create: { organizationId: org.id, userId: user.id, role },
+      });
+      console.log(JSON.stringify({ organization: org.slug, email: user.email, role: m.role }, null, 2));
+      break;
+    }
+    case 'reset-password': {
+      const user = await provisioning().user.findUnique({ where: { email: need('email').toLowerCase() } });
+      if (!user) throw new Error('Unknown user');
+      // 144 random bits; shown once and never stored in plain text.
+      const password = randomBytes(18).toString('base64url');
+      await new AuthService(provisioning() as PrismaService, app.get(ConfigService), app.get(AuditService)).setPassword(user.id, password);
+      console.log(`Temporary password for ${user.email} (shown once; change it via POST /v1/auth/change-password):`);
+      console.log(password);
+      break;
+    }
     default:
-      console.error('Commands: seed-synthetic | import | publish | monthly | openapi');
+      console.error('Commands: seed-synthetic | import | publish | monthly | openapi | create-user | add-member | reset-password');
       process.exitCode = 1;
   }
 } catch (e) {
   log.error(e instanceof Error ? e.message : String(e));
   process.exitCode = 1;
 } finally {
+  await operator?.$disconnect();
   await app.close();
 }

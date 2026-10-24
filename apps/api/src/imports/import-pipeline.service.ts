@@ -1,18 +1,20 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from '../config/env.js';
 import type { ImportStatus, Prisma } from '../generated/prisma/client.js';
 import { AuditService } from '../audit/audit.service.js';
 import { OrganizationAccessService } from '../auth/organization-access.service.js';
-import { PrismaService } from '../prisma/prisma.service.js';
+import { TenantDb } from '../prisma/tenant-db.service.js';
 import { controlTotalsSchema, type ControlTotals } from './parsing/control-totals.js';
 import type { ImportIssue } from './parsing/issues.js';
 import { businessKey, parseBillingFile } from './parsing/parse-billing-file.js';
 import type { NormalizedRow } from './parsing/row-normalizer.js';
 import type { NumberFormat } from './parsing/value-parsers.js';
 import { reconcile, type ActualAggregateRow, type ReconciliationCheck } from './reconciliation.js';
+import { ImportTemplatesService } from './import-templates.service.js';
+import { BILLING_RULES_VERSION } from './parsing/template-mapping.js';
 
 export interface ImportInput {
   organizationId: string;
@@ -22,6 +24,7 @@ export interface ImportInput {
   /** Parsed JSON of the control totals file (validated here). */
   controlTotals: unknown;
   numberFormat?: NumberFormat;
+  templateVersionId?: string;
 }
 
 export interface ImportStats {
@@ -62,10 +65,11 @@ export class ImportPipelineService {
   private readonly logger = new Logger(ImportPipelineService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly tenantDb: TenantDb,
     private readonly config: ConfigService<Env, true>,
     private readonly access: OrganizationAccessService,
     private readonly audit: AuditService,
+    private readonly templates: ImportTemplatesService,
   ) {}
 
   /**
@@ -77,9 +81,19 @@ export class ImportPipelineService {
   async importBillingCsv(input: ImportInput): Promise<ImportOutcome> {
     const { organizationId, actorUserId } = input;
     await this.access.require(actorUserId, organizationId, ['OWNER', 'ANALYST']);
-    const org = await this.prisma.organization.findUniqueOrThrow({ where: { id: organizationId } });
-
+    if (input.templateVersionId && input.numberFormat !== undefined) {
+      throw new BadRequestException('A template defines numberFormat; do not also supply an override');
+    }
+    // Every database step below runs inside a row-level-security tenant transaction.
+    const tenant = { organizationId, userId: actorUserId };
+    const template = input.templateVersionId ? await this.templates.get(
+      { ...tenant, role: 'ANALYST' }, input.templateVersionId, true,
+    ) : undefined;
     const fileSha256 = createHash('sha256').update(input.content).digest('hex');
+    const { org, previous } = await this.tenantDb.run(tenant, async (tx) => ({
+      org: await tx.organization.findUniqueOrThrow({ where: { id: organizationId } }),
+      previous: await this.findSuccessfulBatch(tx, organizationId, fileSha256),
+    }));
     const meta = {
       organizationId,
       fileSha256,
@@ -87,9 +101,10 @@ export class ImportPipelineService {
       fileSizeBytes: input.content.length,
       isSynthetic: org.dataClassification === 'SYNTHETIC',
       createdByUserId: actorUserId,
+      templateVersionId: template?.id ?? null,
+      rulesVersion: BILLING_RULES_VERSION,
     };
 
-    const previous = await this.findSuccessfulBatch(this.prisma, organizationId, fileSha256);
     if (previous) return this.alreadyImported(previous);
 
     // Stage: validate control totals and the data classification rule.
@@ -119,12 +134,13 @@ export class ImportPipelineService {
         maxRows: this.config.get('IMPORT_MAX_ROWS', { infer: true }),
       },
       input.numberFormat ?? 'PLAIN',
+      template?.mapping,
     );
 
     if (!parsed.ok || fileIssues.length > 0 || !ct.success) {
       const issues = [...fileIssues, ...parsed.issues];
       const stats = { ...parsed.stats, rowsAlreadyImported: 0, rowsInserted: 0 };
-      const batch = await this.prisma.$transaction(async (tx) => {
+      const batch = await this.tenantDb.run(tenant, async (tx) => {
         const b = await tx.importBatch.create({
           data: { ...meta, status: 'FAILED_VALIDATION', ...stats, issues: issuesJson(issues) },
         });
@@ -138,14 +154,15 @@ export class ImportPipelineService {
     }
 
     try {
-      return await this.prisma.$transaction(
+      return await this.tenantDb.run(
+        tenant,
         (tx) => this.importInTransaction(tx, meta, parsed.rows, parsed.stats, parsed.issues, ct.data, actorUserId),
         { timeout: 120_000, maxWait: 15_000 },
       );
     } catch (e) {
       if (!(e instanceof ReconciliationFailed)) throw e;
       // The transaction above was rolled back: no transaction rows were kept.
-      const batch = await this.prisma.$transaction(async (tx) => {
+      const batch = await this.tenantDb.run(tenant, async (tx) => {
         const b = await tx.importBatch.create({
           data: {
             ...meta,
@@ -177,7 +194,7 @@ export class ImportPipelineService {
 
   private async importInTransaction(
     tx: Tx,
-    meta: { organizationId: string; fileSha256: string; fileName: string; fileSizeBytes: number; isSynthetic: boolean; createdByUserId: string },
+    meta: { organizationId: string; fileSha256: string; fileName: string; fileSizeBytes: number; isSynthetic: boolean; createdByUserId: string; templateVersionId: string | null; rulesVersion: string },
     rows: NormalizedRow[],
     parsedStats: Omit<ImportStats, 'rowsAlreadyImported' | 'rowsInserted'>,
     parsedIssues: ImportIssue[],
@@ -270,7 +287,7 @@ export class ImportPipelineService {
     return { outcome: 'IMPORTED', batchId: batch.id, status: updated.status, stats, reconciliation: checks, issues: cap(issues) };
   }
 
-  private findSuccessfulBatch(db: Tx | PrismaService, organizationId: string, fileSha256: string) {
+  private findSuccessfulBatch(db: Tx, organizationId: string, fileSha256: string) {
     return db.importBatch.findFirst({
       where: { organizationId, fileSha256, status: { in: ['READY_TO_PUBLISH', 'PUBLISHED'] } },
       orderBy: { createdAt: 'asc' },

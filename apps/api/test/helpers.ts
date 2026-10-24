@@ -1,35 +1,47 @@
+import { PrismaPg } from '@prisma/adapter-pg';
+import { PrismaClient } from '../src/generated/prisma/client.js';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { isUUID } from 'class-validator';
-import type { Request } from 'express';
+import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
-import { AUTHENTICATOR, type Authenticator, type AuthenticatedPrincipal } from '../src/auth/authenticator.js';
+import { AuthService } from '../src/auth/auth.service.js';
 import type { DataClassification } from '../src/generated/prisma/client.js';
 import { PrismaService } from '../src/prisma/prisma.service.js';
 
-/**
- * TEST-ONLY authenticator: trusts an "x-test-user-id" header. It lives in test/, is
- * excluded from the build, and can therefore never be active in a running server.
- */
-export class TestHeaderAuthenticator implements Authenticator {
-  authenticate(req: Request): Promise<AuthenticatedPrincipal | null> {
-    const id = req.header('x-test-user-id');
-    return Promise.resolve(id && isUUID(id) ? { userId: id } : null);
-  }
-}
-
-export async function createTestApp(opts: { testAuth: boolean }): Promise<INestApplication> {
-  let builder = Test.createTestingModule({ imports: [AppModule] });
-  if (opts.testAuth) builder = builder.overrideProvider(AUTHENTICATOR).useClass(TestHeaderAuthenticator);
-  const moduleRef = await builder.compile();
+/** The real application with the real authentication (no test-only shortcuts). */
+export async function createTestApp(): Promise<INestApplication> {
+  const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app);
   await app.init();
   return app;
+}
+
+// Fixture client is never injected into the application under test.
+export function fixtureDb(app: INestApplication): PrismaService {
+ const url = process.env['TEST_MIGRATION_DATABASE_URL'];
+ if (!url || new URL(url).pathname !== '/' + process.env['DUMPWISE_DISPOSABLE_DB']) throw new Error('Fixture DB mismatch');
+ const client = new PrismaClient({ adapter: new PrismaPg({ connectionString: url }) });
+ const close = app.close.bind(app);
+ app.close = async () => { await client.$disconnect(); await close(); };
+ return client as PrismaService;
+}
+export const TEST_PASSWORD = 'blue tractor river mango 42';
+
+/** Gives the user a password and logs in through POST /v1/auth/login. Returns the token pair. */
+export async function loginAs(app: INestApplication, userId: string) {
+  const prisma = app.get(PrismaService);
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!user.passwordHash) await app.get(AuthService).setPassword(userId, TEST_PASSWORD);
+  const res = await request(app.getHttpServer())
+    .post('/v1/auth/login')
+    .send({ email: user.email, password: TEST_PASSWORD })
+    .expect(200);
+  return res.body as { accessToken: string; refreshToken: string; accessTokenExpiresAt: string; sessionExpiresAt: string };
 }
 
 export interface Tenant {

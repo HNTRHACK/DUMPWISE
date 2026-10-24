@@ -232,3 +232,305 @@ and watch it fail.
 **F. Interview**
 1. *Unit vs. integration tests: when do you use which?* Unit tests for logic with many cases (date parsing), because they are fast and precise. Integration tests for wiring and contracts (SQL, guards, transactions), where mocks would hide real bugs.
 2. *How do you keep database tests reliable?* Use a dedicated test database, migrate it the same way as production, give each test unique data or clean deterministically, avoid order dependence, and run files serially when they share state.
+
+---
+
+# Phase 2a — Authentication, authorization and protected APIs
+
+## Step 9 — Password storage
+
+**A.** Users log in with e-mail and password. We never store the password: we store a
+**scrypt** hash with a random salt, in the form `scrypt$16$8$2$<salt>$<hash>`.
+
+**B.** If the database ever leaks, attackers must not get working passwords. Many people
+reuse passwords across systems, including their SAP login.
+
+**C.** `src/auth/password-hasher.ts`, `src/auth/password-hasher.spec.ts`
+
+**D. Concepts**
+- **Hash vs. encryption.** Encryption can be reversed with a key. A hash cannot be reversed: to check a password you hash the attempt and compare.
+- **Salt.** Random bytes mixed in, so two users with the same password get different hashes and precomputed "rainbow tables" are useless.
+- **Slow, memory-hard hashing.** scrypt deliberately uses ~64 MiB of memory and ~0.2 s per guess. That's harmless for one login and ruinous for someone trying billions of guesses on GPUs. Never use plain SHA-256 for passwords.
+- **Constant-time comparison** (`timingSafeEqual`). It doesn't stop early at the first wrong byte, so timing reveals nothing.
+- **Unicode normalization (NFKC).** "café" can be typed as one character or as "e" plus an accent; both must log in.
+
+**E. Exercise.** In `password-hasher.spec.ts`, write a test proving that the *same* password
+hashed twice verifies against *both* hashes, even though the hashes differ.
+
+**F. Interview**
+1. *Why not hash passwords with SHA-256?* It is designed to be fast, billions per second on a GPU, so leaked hashes of human passwords are cracked quickly. Password hashing needs a deliberately slow, salted, preferably memory-hard function: scrypt, Argon2id or bcrypt.
+2. *What is a salt and why must it be unique per password?* Random data hashed together with the password. A unique salt means identical passwords produce different hashes, so an attacker must attack every hash separately and precomputed tables don't work.
+
+---
+
+## Step 10 — Sessions and tokens
+
+**A.** Login creates a row in `auth_sessions` and returns two random tokens. The **access
+token** (15 minutes) goes in `Authorization: Bearer …` on every request. The **refresh
+token** gets a new pair when the access token expires. Only SHA-256 hashes of the tokens
+are stored.
+
+**B.** Users must stay logged in for a working day without re-typing passwords, and an
+administrator must be able to cut off a stolen laptop **immediately**.
+
+**C.** `src/auth/tokens.ts`, `src/auth/auth.service.ts` (`login`, `refresh`,
+`authenticateAccessToken`), `src/auth/authenticator.ts`, `test/auth.e2e-spec.ts`
+
+**D. Concepts**
+- **Stateful sessions vs. stateless JWTs.** A JWT carries signed claims and the server trusts it until it expires, so revoking it needs extra machinery. Our opaque tokens are looked up in the database on every request: one indexed query, but logout, password change and account disable work instantly.
+- **Short-lived access, longer-lived refresh.** A leaked access token is only useful for minutes.
+- **Refresh rotation and reuse detection.** Each refresh token works exactly once. If an old one shows up again, two parties hold copies (one is a thief), so we revoke the whole session.
+- **Why a fast hash is fine for tokens.** They have 256 bits of randomness. Unlike human passwords, there is nothing to guess.
+- **Bearer header vs. cookies.** Headers are not sent automatically by browsers, so CSRF doesn't apply. The frontend must still protect tokens from XSS.
+
+**E. Exercise.** Add `GET /v1/auth/sessions` that lists the current user's *active* sessions
+(id, createdAt, lastRefreshedAt, expiresAt; never hashes). Add an e2e test that logging in
+twice shows two sessions and that logout leaves one.
+
+**F. Interview**
+1. *Access token vs. refresh token?* The access token is short-lived and sent on every API call. The refresh token is longer-lived, used only at the token endpoint to obtain new access tokens, and so exposed far less often.
+2. *How do you revoke a JWT before it expires?* You can't with the token alone. Options are short lifetimes plus refresh, a server-side denylist of token ids, or switching to server-side sessions (what we did) where revocation is a database update.
+
+---
+
+## Step 11 — Guards, decorators and role-based authorization
+
+**A.** `OrganizationAccessGuard` runs before every organization-scoped controller method.
+It authenticates (401), reads `X-Organization-Id` (400), and checks the membership plus
+any `@RequireRoles('OWNER')` on the route (403).
+
+**B.** Separation of duties: an analyst can load data, but only an owner can publish numbers
+management will see. One company must never see another's figures.
+
+**C.** `src/auth/organization-access.guard.ts`, `src/auth/organization-access.service.ts`,
+`src/imports/imports.controller.ts`
+
+**D. Concepts**
+- **Guard.** A Nest class with `canActivate()`. If it throws or returns false, the controller never runs.
+- **Metadata and `Reflector`.** `@RequireRoles(...)` attaches data to a method (`SetMetadata`). The guard reads it back with `reflector.getAllAndOverride`. This is how decorators "configure" generic code.
+- **RBAC (role-based access control).** Permissions belong to roles; users get roles *per organization* through `memberships`.
+- **Defense in depth.** The services check roles again, so the CLI and future callers can't bypass the guard.
+- **401 vs. 403 vs. 404.** Unknown caller, known but not allowed, and "doesn't exist *for you*". Answering 404 for another tenant's batch avoids confirming that it exists.
+
+**E. Exercise.** Make `GET /v1/imports/:batchId` hide the `issues` array from VIEWERs (they
+see the summary and reconciliation only). Test both roles.
+
+**F. Interview**
+1. *Where should authorization be enforced?* On the server, as close to the data as practical, and consistently. Here that's the guard at the HTTP edge, the role check in services, and tenant filters in every query (plus database constraints). Never rely on the frontend hiding buttons.
+2. *What is an IDOR vulnerability?* Insecure Direct Object Reference: the server trusts an id from the client without checking that the caller may access that object. For example, `/imports/<someone else's id>`. We prevent it by always querying with `id AND organization_id`, and we have a test for it.
+
+---
+
+## Step 12 — Protecting the API surface
+
+**A.** Rate limits (10 login attempts per minute per IP), account lockout, security headers
+(helmet), streaming upload limits, `Cache-Control: no-store` on token responses, and HTTP
+endpoints for upload and publish built on the unchanged pipeline.
+
+**B.** Once a login endpoint exists, bots *will* try passwords. Upload endpoints are a classic
+path for memory exhaustion and malicious files.
+
+**C.** `src/app.module.ts` (ThrottlerModule), `src/auth/auth-rate-limit.ts`, `src/app.setup.ts`
+(helmet), `src/imports/imports.module.ts` (multer limits), `test/rate-limit.e2e-spec.ts`
+
+**D. Concepts**
+- **Rate limiting vs. lockout.** Rate limiting slows one *client*. Lockout protects one *account* from many clients. Both have trade-offs: lockout can be abused to annoy a user.
+- **multipart/form-data.** The HTTP encoding for file uploads. Limits must apply *while streaming* so a 5 GB upload is cut off early.
+- **Security headers.** CSP limits where scripts may come from; `nosniff` stops MIME guessing; `X-Frame-Options` blocks clickjacking; HSTS forces HTTPS (only meaningful once HTTPS exists, which is why it is production-only).
+- **HTTP 429 Too Many Requests**, plus `Retry-After` headers.
+
+**E. Exercise.** Write an e2e test (in its own file, like `rate-limit.e2e-spec.ts`, setting a
+small `IMPORT_MAX_BYTES` before importing the app) that uploads a file just over the limit.
+Check which status code multer produces, and explain why.
+
+**F. Interview**
+1. *Why is in-memory rate limiting insufficient for production?* Each instance counts separately and the counters vanish on restart. Behind a load balancer you need shared storage such as Redis, and behind a proxy you must use the real client IP (trusted `X-Forwarded-For`).
+2. *Why return the same error for "unknown e-mail" and "wrong password"?* Distinct messages, or distinct timings, let attackers enumerate which e-mails have accounts, then focus attacks or phishing on them. We also spend equal hashing time on unknown users.
+
+---
+
+# Phase 3 — Frontend (`apps/web`)
+
+Each milestone: **what and why**, **concepts**, **how to test**, one **exercise**, two **interview questions**.
+
+## M1 — Inspect, then plan the integration
+
+**What and why.** Before writing UI we read the API's source and OpenAPI: 11 operations,
+Bearer tokens in JSON, no CORS. That decided the architecture, a same-origin BFF, and exposed
+a real integration issue (client IP for login-abuse protection) before it could ship.
+
+**Concepts.** API contracts; same-origin vs. cross-origin; why a frontend must never invent endpoints.
+
+**How to test.** `test/unit/contract.test.ts` compares the frontend schemas with `docs/openapi.json`.
+
+**Exercise.** Rename a property in `importStatsSchema`, run `npm test`, and read the failure.
+
+**Interview.**
+1. *Why generate or check types against OpenAPI?* So the frontend's idea of the API cannot silently drift from the real one; a renamed field fails a test instead of showing `undefined` to users.
+2. *What is a BFF?* "Backend for frontend": a thin server owned by the web app that calls the real API for the browser. It lets you keep secrets (tokens) server-side and shape responses for the UI.
+
+## M2 — Next.js App Router, design tokens, typography
+
+**What and why.**
+- Route groups `(marketing)`, `(auth)` and `(workspace)` give each area its own layout.
+- Design tokens are CSS variables, so dark mode is one class.
+- Fonts are self-hosted with `next/font`.
+
+**Concepts.**
+- **Server Components** (the default) render on the server and ship no JS.
+- **Client Components** (`"use client"`) handle state, effects and events.
+- **Layouts** wrap pages and persist across navigations.
+- **Cache Components** (Next 16) prerender a static shell; request data such as `cookies()` must sit inside `<Suspense>`.
+- **Tailwind v4**: tokens live in CSS (`@theme`); utilities like `bg-surface` map to them.
+- **Responsive design**: mobile-first classes (`md:`, `lg:`) and fluid type with `clamp()`.
+
+**How to test.** `npm run build` lists each route as Static (○), Partial prerender (◐) or Dynamic (ƒ).
+
+**Exercise.** Add a `--color-cocoa-600` token and use it for the sidebar hover state.
+
+**Interview.**
+1. *Server vs. Client Components?* Server Components run only on the server: no bundle cost, and they can access secrets and data directly. Client Components hydrate in the browser for interactivity. Keep the client boundary as low in the tree as possible.
+2. *Why `next/font` instead of a Google Fonts `<link>`?* Fonts are downloaded at build time and served from your origin (privacy, no third-party request), with size-adjusted fallbacks that prevent layout shift.
+
+## M3 — Authentication through the BFF
+
+**What and why.** Tokens live in **HttpOnly cookies** that JavaScript cannot read, so an XSS
+bug cannot steal them. Route handlers turn cookies into `Authorization: Bearer` for the API.
+
+**Concepts.**
+- **Cookie flags:** HttpOnly (no JS access), Secure (HTTPS only), SameSite (cross-site sending), and the `__Host-` prefix (exact host, path `/`, Secure).
+- **CSRF**, and why a custom header plus an Origin check stops it.
+- **Refresh rotation**, and why concurrent refreshes need **single-flight**.
+- **Open redirects** (`safeNext`).
+
+**How to test.**
+- `test/unit/security.test.ts` (CSRF, allowlist, single-flight).
+- `test/e2e/auth.spec.ts`: HttpOnly cookies, exactly one refresh for concurrent 401s, server-side revocation, logout.
+
+**Exercise.** Add `/v1/auth/me` to the allowlist test's "rejects" list for `POST` and check that it fails as expected.
+
+**Interview.**
+1. *localStorage vs. HttpOnly cookie for tokens?* localStorage is readable by any script on the page, so one XSS steals the session. An HttpOnly cookie is not readable by scripts; you then must defend against CSRF (SameSite, custom header, Origin check).
+2. *What problem does refresh-token rotation create for SPAs, and how do you solve it?* Parallel requests may all try to refresh with the same token. The second use looks like theft and kills the session. Deduplicate refreshes (single-flight) and briefly reuse the result.
+
+## M4 — Workspace shell and real sales data
+
+**What and why.** `WorkspaceProvider` loads the user and memberships once and provides the
+active organization, date range and theme through context. Pages fetch through the typed client.
+
+**Concepts.**
+- **Props vs. state vs. context.**
+- **Effects** synchronize with external systems; `useSyncExternalStore` subscribes to browser state (media queries, scroll).
+- **Request races:** abort the previous request when filters change (`useResource`).
+- **Derived state:** compute rather than store, e.g. "loading" = the last result belongs to another request.
+- **Money:** decimal strings, `BigInt` sums, `Intl.NumberFormat`; never add different currencies.
+
+**How to test.** `test/unit/monthly.test.ts`; `workspace.spec.ts` (preset → API query, currency separation, organization switching).
+
+**Exercise.** Add a "previous year same month" comparison to `analytics/monthly.ts` that returns `unavailable` when either month is missing. Write the test first.
+
+**Interview.**
+1. *How do you prevent a slow old response from overwriting newer data?* Cancel it with `AbortController` when inputs change, and ignore results whose request key is no longer current.
+2. *Why are frontend role checks not security?* Users control their browser and can call the API directly. The UI hides actions for convenience; the server must enforce, and a test proves a direct forbidden publish gets 403.
+
+## M5 — Import center and publication
+
+**What and why.**
+- Uploads are sent as multipart through the BFF.
+- Results are shown exactly as the server reports them.
+- Publishing is OWNER-only, behind a confirmation dialog.
+- Imports and publishes are never retried automatically.
+
+**Concepts.**
+- `FormData` and multipart encoding.
+- **Idempotency**: safe vs. unsafe operations, and why POSTs are not retried.
+- Disabling buttons while a request is pending.
+- Accessible dialogs: focus trap, Esc, and returning focus.
+
+**How to test.** `workspace.spec.ts`: client-side rejection without an API call, server validation and reconciliation failures, 409 in the dialog, confirm and cancel.
+
+**Exercise.** Show a warning when the selected CSV's name doesn't start with `SYNTHETIC_` while the active organization is classified SYNTHETIC. It's a hint only: the server still decides.
+
+**Interview.**
+1. *Why validate files on both client and server?* Client checks give fast feedback; server checks are the security boundary, because clients can be bypassed.
+2. *Should a timed-out upload be retried automatically?* No. The server may have processed it, so a retry could duplicate work. Tell the user to check the list. Our API is idempotent per file hash anyway.
+
+## M6 — WebGL Data Core (Three.js / React Three Fiber)
+
+**What and why.** A procedural scene of 540 instanced "ledger panels" moves from a scattered
+cloud into an ordered lattice as you scroll: RAW DATA → VALIDATION → RECONCILIATION → INSIGHT.
+
+**Concepts.**
+- **Scene** (objects), **camera** (PerspectiveCamera, fov 35), **renderer** (WebGL) and **render loop** (`useFrame` ≈ 60 fps).
+- **Geometry vs. material vs. mesh.**
+- **InstancedMesh**: one draw call for hundreds of objects, each with its own matrix and colour.
+- **Quaternions** for rotation interpolation (`slerp`).
+- **Lighting**: ambient, directional (key/rim) and a point light for the core glow; fog for depth.
+- **Performance:**
+  - cap the device pixel ratio;
+  - avoid per-frame allocations (scratch objects);
+  - pause the loop when off-screen or hidden;
+  - choose a tier by device capability;
+  - lazy-load the 3D code.
+- **Cleanup:** R3F disposes JSX-declared resources. Next 16 keeps hidden routes alive, so the loop is stopped imperatively.
+
+**How to test.** `marketing.spec.ts`: canvas renders and the frame counter rises; after navigating away the counter freezes; Back resumes; reduced motion and no-WebGL show the SVG.
+
+**Exercise.** Change the target layout in `three/layout.ts` from rings to a double helix. Keep the deterministic PRNG.
+
+**Interview.**
+1. *Why use instancing?* Each mesh costs a draw call (CPU → GPU overhead). Instancing renders many copies of one geometry in a single call, with per-instance transforms.
+2. *How do you stop a WebGL page from draining batteries?* Render only when visible (IntersectionObserver, `visibilitychange`), cap DPR, reduce geometry on weak devices, offer a static fallback, and free GPU resources on unmount.
+
+## M7 — Scroll choreography with GSAP
+
+**What and why.** ScrollTrigger maps scroll position to animation progress: the hero track
+(360 vh with a sticky stage) drives the 3D progress; sections reveal as they enter.
+
+**Concepts.**
+- Timelines and tweens, `scrub` (animation tied to scroll), `ScrollTrigger.batch` for lists.
+- `useGSAP` scoping and automatic cleanup.
+- `gsap.matchMedia` for reduced motion.
+- Animate `transform` and `opacity` only.
+- **Never hide content with `visibility` before revealing it**: hidden elements cannot receive keyboard focus (a test found this bug).
+
+**How to test.** Playwright with `reducedMotion: "reduce"`; the keyboard test tabs into the demo.
+
+**Exercise.** Add a scrubbed horizontal progress line under the four process steps in section 3. Disable it under reduced motion.
+
+**Interview.**
+1. *Why write scroll progress to a ref instead of React state?* Scroll fires dozens of times per second. A ref read inside the render loop avoids re-rendering React on every scroll event.
+2. *How do you make scroll animations accessible?* Respect `prefers-reduced-motion`, keep content readable and focusable without JS, avoid scroll-jacking, and never make motion the only way to get information.
+
+## M8 — Testing, accessibility and performance
+
+**What and why.**
+- **59 unit tests** cover pure logic: contract, money, security helpers and the client.
+- **34 browser tests** run the production build against a mock API with synthetic data, so they are deterministic and never touch PostgreSQL.
+- A lab performance script uses Chromium's PerformanceObserver.
+
+**Concepts.**
+- The test pyramid.
+- Contract tests vs. mocks.
+- Accessible locators (`getByRole`) that double as accessibility checks.
+- LCP and CLS.
+- Code splitting: Three.js only on qualifying devices, Recharts only in the workspace.
+
+**How to test.** `npm run verify`; `node test/perf/measure.mjs` (see its header).
+
+**Exercise.** Add `@axe-core/playwright` and assert there are no serious violations on `/login` and `/app/settings`.
+
+**Interview.**
+1. *Why test against a mock API if you have a real one?* Speed, determinism and safety: no shared database state and no real data. The contract test keeps the mock honest; a smaller set of live tests should still run against a disposable real backend.
+2. *LCP vs. CLS?* LCP is when the largest visible element finishes rendering (perceived load speed). CLS is the total unexpected layout movement. Server-rendered text heroes and font fallbacks keep both good.
+
+## Phase 4 exercises and interview questions
+
+1. GROUP BY: explain why an entity with both EA and KG has two ranking rows. Exercise: add the rows' revenue, then explain why their quantities must remain separate.
+2. SQL aggregation: trace one F2 invoice, G2 credit, RE return and S1 cancellation through monthly and ranked CTEs. Exercise: reconcile 100 - 10 - 20 - 5 = 65 with the API's separate reduction columns.
+3. DTOs: DTO decorators validate the public query before it reaches SQL and describe OpenAPI. Exercise: request limit=101, sort=netQuantity without unit, and an extra organizationId parameter; predict the response and explain the trust boundary.
+4. Pagination: LIMIT/OFFSET bounds the returned page; COUNT and KPI totals describe the full filtered population. Interview: why does LIMIT not eliminate the cost of GROUP BY? Why is id/unit needed as a tie-breaker? When would keyset pagination help?
+5. Indexes: existing tenant/date and tenant/entity indexes serve different predicates. Exercise: inspect EXPLAIN (ANALYZE, BUFFERS) on disposable synthetic data and compare rows scanned with rows returned. Interview: when can another index slow writes without helping this query?
+6. Growth: exercise a positive base, zero base, negative base, returns-only current month and absent previous month. Interview: why is activity coverage different from proof of source completeness?
+7. Charts: trace decimal string -> numeric bar height, while tooltip/table still use the original string. Interview: what breaks if Number() is also used for monetary totals?
+8. Tenancy: explain how explicit filters, composite joins and transaction-local RLS complement each other. Exercise: query without tenant context using the restricted test role, then reuse a one-connection pool across A/B/A.
