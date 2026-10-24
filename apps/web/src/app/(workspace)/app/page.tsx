@@ -12,7 +12,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { Card, CardBody, CardHeader, CardTitle, PageHeader, Skeleton } from "@/components/ui/primitives";
 import { monthOverMonth } from "@/lib/analytics/monthly";
 import { api } from "@/lib/api/client";
-import { formatDateTime, formatInteger, formatMoney, formatMonth, formatPercent, formatQuantity } from "@/lib/format";
+import { formatDateTime, formatInteger, formatMoney, formatMoneyScaled, formatMonth, formatPercent, formatQuantity } from "@/lib/format";
 import { useResource } from "@/lib/use-resource";
 
 function Kpi({ label, value, hint, children }: { label: string; value: React.ReactNode; hint?: React.ReactNode; children?: React.ReactNode }) {
@@ -57,7 +57,7 @@ export default function OverviewPage() {
       ) : (
         <div aria-busy={resource.state === "loading"} className="space-y-6">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Kpi label={`Net sales · ${currency}`} value={formatMoney(summary.netSales, currency, { compact: true })} hint={<span className="tabular">{formatMoney(summary.netSales, currency)}</span>} />
+            <Kpi label={`Net sales · ${currency}`} value={formatMoneyScaled(summary.netSales, currency)} hint={<span className="tabular">{formatMoney(summary.netSales, currency)}</span>} />
             <Kpi
               label="Month over month"
               value={growth.kind === "value" ? (
@@ -73,7 +73,9 @@ export default function OverviewPage() {
                 units the headline is the number of units of measure and the breakdown is the data. */}
             <Kpi
               label="Net units"
-              value={summary.units.length === 1 ? `${formatQuantity(summary.units[0].quantity)} ${summary.units[0].unit}` : `${summary.units.length} units of measure`}
+              value={summary.units.length === 1 ? `${formatQuantity(summary.units[0].quantity)} ${summary.units[0].unit}` : (
+                <>{summary.units.length}{" "}<span className="block whitespace-nowrap font-sans text-sm font-medium tracking-normal">units of measure</span></>
+              )}
               hint={summary.units.map((u) => `${formatQuantity(u.quantity)} ${u.unit}`).join(" · ") || "No units"}
             />
           </div>

@@ -19,6 +19,23 @@ test("all public routes render with a heading", async ({ page }) => {
   expect(missing?.status()).toBe(404);
 });
 
+test("serves and links the DUMPWISE icons (not the Next.js default)", async ({ page, request }) => {
+  await page.goto("/");
+  const hrefs = await page.locator('head link[rel="icon"], head link[rel="apple-touch-icon"]').evaluateAll((els) => els.map((e) => e.getAttribute("href") ?? ""));
+  expect(hrefs.some((h) => h.startsWith("/favicon.ico"))).toBe(true);
+  expect(hrefs.some((h) => h.startsWith("/icon.svg"))).toBe(true);
+  expect(hrefs.some((h) => h.startsWith("/apple-icon.png"))).toBe(true);
+  const svg = await request.get("/icon.svg");
+  expect(svg.headers()["content-type"]).toContain("image/svg+xml");
+  expect(await svg.text()).toContain("#F07837");
+  const ico = await request.get("/favicon.ico");
+  expect(ico.status()).toBe(200);
+  const bytes = await ico.body();
+  expect(bytes.readUInt16LE(2)).toBe(1); // ICO type
+  expect(bytes.readUInt16LE(4)).toBe(3); // 16, 32 and 48 px frames
+  expect((await request.get("/apple-icon.png")).headers()["content-type"]).toContain("image/png");
+});
+
 test("Enter Workspace links to login when signed out and to the workspace when signed in", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("link", { name: "Enter Workspace" }).first()).toHaveAttribute("href", "/login");

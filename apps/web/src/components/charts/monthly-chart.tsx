@@ -2,7 +2,7 @@
 
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { MonthPoint } from "@/lib/analytics/monthly";
-import { formatInteger, formatMoney, formatMonth } from "@/lib/format";
+import { formatInteger, formatMoney, formatMonth, moneyAxis } from "@/lib/format";
 
 /**
  * Monthly net sales for ONE currency. Months without published data are gaps (null), not
@@ -19,12 +19,15 @@ export function MonthlyChart({ series, currency, height = 300 }: { series: Month
     count: p.transactionCount,
   }));
   const withData = series.filter((p) => p.netSales !== null);
+  // One unit for the whole axis (e.g. "₹ crore", "$ thousand"); ticks are plain numbers.
+  const axis = moneyAxis(currency, Math.max(0, ...data.map((d) => Math.abs(d.value ?? 0))));
   const summary = withData.length
-    ? `Monthly net sales in ${currency} from ${formatMonth(series[0].month)} to ${formatMonth(series[series.length - 1].month)}; ${withData.length} of ${series.length} months have published data.`
+    ? `Monthly net sales in ${currency} from ${formatMonth(series[0].month)} to ${formatMonth(series[series.length - 1].month)}; ${withData.length} of ${series.length} months have published data. ${axis.caption}.`
     : `No published ${currency} sales in this range.`;
 
   return (
     <figure aria-label={summary} className="w-full">
+      <p aria-hidden className="mb-2 text-xs text-muted">{axis.caption}</p>
       <div style={{ height }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 8 }} accessibilityLayer>
@@ -33,9 +36,9 @@ export function MonthlyChart({ series, currency, height = 300 }: { series: Month
             <YAxis
               tickLine={false}
               axisLine={false}
-              width={72}
+              width={56}
               tick={{ fill: "var(--text-muted)", fontSize: 12 }}
-              tickFormatter={(v: number) => formatMoney(String(v), currency, { compact: true })}
+              tickFormatter={axis.tick}
             />
             <Tooltip
               cursor={{ fill: "var(--surface-2)" }}

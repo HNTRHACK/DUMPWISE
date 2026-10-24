@@ -23,7 +23,9 @@ function expectedTotal(currency: string, months: string[]): string {
   let minor = 0n;
   for (const t of control.totals) if (t.currency === currency && months.includes(t.month)) minor += BigInt(t.netAmount.replace(".", ""));
   const s = minor.toString().padStart(3, "0");
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency, minimumFractionDigits: 2 }).format(`${s.slice(0, -2)}.${s.slice(-2)}` as `${number}`);
+  // Independent of the app's formatter: INR in Indian grouping, USD in US grouping.
+  const locale = { INR: "en-IN", USD: "en-US" }[currency] ?? "en-US";
+  return new Intl.NumberFormat(locale, { style: "currency", currency, minimumFractionDigits: 2 }).format(`${s.slice(0, -2)}.${s.slice(-2)}` as `${number}`);
 }
 function last12CompletedMonths(): string[] {
   const now = new Date();

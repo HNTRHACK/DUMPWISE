@@ -17,10 +17,35 @@ test.describe("sales", () => {
     const inrTotal = page.locator("tfoot td").first();
     await expect(inrTotal).toContainText("₹");
 
+    await expect(inrTotal).toHaveText(/^₹\d{1,2}(,\d{2})*,\d{3}\.\d{2}$/); // Indian grouping
+    await expect(page.getByText(/^Amounts in ₹ (crore|lakh)$/)).toBeVisible(); // one unit per axis
+
     await page.getByRole("radio", { name: "USD" }).click();
     await expect(page.getByRole("heading", { name: "Monthly detail · USD" })).toBeVisible();
     await expect(page.locator("tfoot td").first()).toContainText("$");
     await expect(page.locator("tfoot td").first()).not.toContainText("₹");
+    await expect(page.locator("tfoot td").first()).toHaveText(/^\$\d{1,3}(,\d{3})*\.\d{2}$/); // US grouping
+    await expect(page.getByText(/^Amounts in \$ (thousand|million)$/)).toBeVisible();
+  });
+
+  test("KPI headline uses a spelled-out unit next to the exact amount", async ({ page }) => {
+    await login(page, "analyst");
+    const kpi = page.getByText(/^Net sales · INR$/).locator("..");
+    await expect(kpi).toContainText(/₹[\d,.]+ (crore|lakh)/);
+    await expect(kpi).toContainText(/₹\d{1,2}(,\d{2})*,\d{3}\.\d{2}/);
+    await expect(kpi).not.toContainText(/\d(Cr|L|K)\b/);
+    const units = page.getByText("Net units", { exact: true }).locator("..");
+    const descriptor = units.getByText("units of measure", { exact: true });
+    for (const width of [1440, 1280, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(units).toContainText("2 units of measure");
+      await expect(descriptor).toBeVisible();
+      expect(await descriptor.evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getClientRects().length === 1 && el.scrollWidth <= el.clientWidth;
+      })).toBe(true);
+    }
   });
 
   test("the range preset changes the API query", async ({ page }) => {
