@@ -3,11 +3,12 @@
 Enterprise sales and logistics intelligence for Indian manufacturing and distribution
 companies that run SAP.
 
-> **Status: Phase 2a (authentication + protected APIs) on branch `feat/auth-secure-apis`.**
-> The repository contains a NestJS API with e-mail/password login and revocable sessions,
-> organization-scoped authorization, HTTP endpoints for import, publication and monthly
-> sales, and a deterministic SAP billing CSV pipeline with reconciliation. All data in the
-> repository is **synthetic**. There is no frontend, no live SAP integration and no forecasting yet.
+> **Status: Phase 3 (web frontend) on branch `feat/security-hardening`, uncommitted.**
+> `apps/api`: NestJS API with revocable sessions, organization roles, PostgreSQL row-level
+> security, CSV import with reconciliation, and monthly sales. `apps/web`: Next.js 16 marketing
+> site with a 3D hero, and an authenticated workspace (overview, sales, imports, settings)
+> connected to the real API through a secure same-origin BFF. All data in the repository is
+> **synthetic**. No live SAP integration and no forecasting yet.
 
 ## What exists today
 
@@ -105,6 +106,44 @@ Invoke-RestMethod -Method Post "$base/v1/auth/logout" -Headers $h
 
 Other operator commands: `create-user --email --name`, `add-member --org --email --role OWNER|ANALYST|VIEWER`.
 
+## Web app: install and run API + web together (Windows PowerShell)
+
+Requires the API setup above (database migrated, a user with a password via
+`npm run cli -- reset-password --email demo.owner@example.invalid`).
+
+```powershell
+# One-time: install the web app
+Set-Location C:\Users\HARDIK\Documents\Projects\DUMPWISE\apps\web
+npm install
+
+# Leave TRUST_PROXY unset (= false) on the API for local development. Enabling it while
+# Next.js is the edge would let browsers fake their IP (docs/PHASE_3_5_INTEGRATION.md).
+
+# Terminal 1: PostgreSQL + API on http://127.0.0.1:3001
+Set-Location C:\Users\HARDIK\Documents\Projects\DUMPWISE
+docker compose up -d
+Set-Location apps\api
+npm run start:dev
+
+# Terminal 2: web app on http://localhost:3000 (bound to 127.0.0.1)
+Set-Location C:\Users\HARDIK\Documents\Projects\DUMPWISE\apps\web
+npm run dev          # optional: $env:DUMPWISE_API_URL="http://127.0.0.1:3001" (the default)
+```
+
+| URL | What |
+|---|---|
+| http://localhost:3000 | Marketing site (3D hero; `?tier=static` forces the SVG version) |
+| http://localhost:3000/login | Sign in |
+| http://localhost:3000/app | Workspace (overview, sales, imports, settings) |
+| http://127.0.0.1:3001/docs | API Swagger UI (development) |
+
+Web checks (run in `apps\web`; Playwright uses a mock API with synthetic data, never PostgreSQL):
+
+```powershell
+npx playwright install chromium   # one-time browser download
+npm run verify                    # lint, typecheck, 62 unit tests, production build, 34 browser tests
+```
+
 ## Daily commands (run in `apps\api`)
 
 ```powershell
@@ -135,6 +174,14 @@ apps/api/                    NestJS API
   src/auth/                  authentication interface + organization authorization
   src/cli/dumpwise.ts        operator CLI (seed, import, publish, monthly, openapi)
   test/                      e2e tests + test-only authenticator
+apps/web/                    Next.js 16 frontend
+  src/app/(marketing)/       /, /product, /security, /contact
+  src/app/(auth)/login/      sign-in
+  src/app/(workspace)/app/   authenticated workspace pages
+  src/app/api/               BFF: login/logout/session + allowlisted /api/v1/* proxy
+  src/lib/                   api client + schemas, auth (CSRF, single-flight), analytics
+  src/components/            ui, dashboard, charts, marketing, three (3D Data Core)
+  test/unit/ test/e2e/       Vitest + Playwright (mock API with synthetic data)
 data/synthetic/              SYNTHETIC demo data only
 tools/synthetic-data/        Python generator for the synthetic data
 docs/                        architecture, schema, security, API, results, learning guide
@@ -148,4 +195,8 @@ docs/                        architecture, schema, security, API, results, learn
 - [docs/API.md](docs/API.md) — endpoints ([docs/openapi.json](docs/openapi.json))
 - [docs/PHASE_1_RESULTS.md](docs/PHASE_1_RESULTS.md) — what was built and verified
 - [docs/PHASE_2A_AUTH_RESULTS.md](docs/PHASE_2A_AUTH_RESULTS.md) — authentication + protected APIs, verified results
+- [docs/FRONTEND_ARCHITECTURE.md](docs/FRONTEND_ARCHITECTURE.md) — web app routes, BFF auth, data layer, 3D
+- [docs/FRONTEND_DESIGN_SYSTEM.md](docs/FRONTEND_DESIGN_SYSTEM.md) — tokens, measured contrast, typography, motion
+- [docs/API_INTEGRATION_MATRIX.md](docs/API_INTEGRATION_MATRIX.md) — endpoint ↔ UI mapping and backend gaps
+- [docs/PHASE_3_RESULTS.md](docs/PHASE_3_RESULTS.md) — frontend phase results
 - [docs/LEARNING_GUIDE.md](docs/LEARNING_GUIDE.md) — concepts, exercises and interview questions per step

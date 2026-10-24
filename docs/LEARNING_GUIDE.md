@@ -346,3 +346,180 @@ Check which status code multer produces, and explain why.
 **F. Interview**
 1. *Why is in-memory rate limiting insufficient for production?* Each instance counts separately and the counters vanish on restart. Behind a load balancer you need shared storage such as Redis, and behind a proxy you must use the real client IP (trusted `X-Forwarded-For`).
 2. *Why return the same error for "unknown e-mail" and "wrong password"?* Distinct messages, or distinct timings, let attackers enumerate which e-mails have accounts, then focus attacks or phishing on them. We also spend equal hashing time on unknown users.
+
+---
+
+# Phase 3 — Frontend (`apps/web`)
+
+Each milestone: **what and why**, **concepts**, **how to test**, one **exercise**, two **interview questions**.
+
+## M1 — Inspect, then plan the integration
+
+**What and why.** Before writing UI we read the API's source and OpenAPI: 11 operations,
+Bearer tokens in JSON, no CORS. That decided the architecture, a same-origin BFF, and exposed
+a real integration issue (client IP for login-abuse protection) before it could ship.
+
+**Concepts.** API contracts; same-origin vs. cross-origin; why a frontend must never invent endpoints.
+
+**How to test.** `test/unit/contract.test.ts` compares the frontend schemas with `docs/openapi.json`.
+
+**Exercise.** Rename a property in `importStatsSchema`, run `npm test`, and read the failure.
+
+**Interview.**
+1. *Why generate or check types against OpenAPI?* So the frontend's idea of the API cannot silently drift from the real one; a renamed field fails a test instead of showing `undefined` to users.
+2. *What is a BFF?* "Backend for frontend": a thin server owned by the web app that calls the real API for the browser. It lets you keep secrets (tokens) server-side and shape responses for the UI.
+
+## M2 — Next.js App Router, design tokens, typography
+
+**What and why.**
+- Route groups `(marketing)`, `(auth)` and `(workspace)` give each area its own layout.
+- Design tokens are CSS variables, so dark mode is one class.
+- Fonts are self-hosted with `next/font`.
+
+**Concepts.**
+- **Server Components** (the default) render on the server and ship no JS.
+- **Client Components** (`"use client"`) handle state, effects and events.
+- **Layouts** wrap pages and persist across navigations.
+- **Cache Components** (Next 16) prerender a static shell; request data such as `cookies()` must sit inside `<Suspense>`.
+- **Tailwind v4**: tokens live in CSS (`@theme`); utilities like `bg-surface` map to them.
+- **Responsive design**: mobile-first classes (`md:`, `lg:`) and fluid type with `clamp()`.
+
+**How to test.** `npm run build` lists each route as Static (○), Partial prerender (◐) or Dynamic (ƒ).
+
+**Exercise.** Add a `--color-cocoa-600` token and use it for the sidebar hover state.
+
+**Interview.**
+1. *Server vs. Client Components?* Server Components run only on the server: no bundle cost, and they can access secrets and data directly. Client Components hydrate in the browser for interactivity. Keep the client boundary as low in the tree as possible.
+2. *Why `next/font` instead of a Google Fonts `<link>`?* Fonts are downloaded at build time and served from your origin (privacy, no third-party request), with size-adjusted fallbacks that prevent layout shift.
+
+## M3 — Authentication through the BFF
+
+**What and why.** Tokens live in **HttpOnly cookies** that JavaScript cannot read, so an XSS
+bug cannot steal them. Route handlers turn cookies into `Authorization: Bearer` for the API.
+
+**Concepts.**
+- **Cookie flags:** HttpOnly (no JS access), Secure (HTTPS only), SameSite (cross-site sending), and the `__Host-` prefix (exact host, path `/`, Secure).
+- **CSRF**, and why a custom header plus an Origin check stops it.
+- **Refresh rotation**, and why concurrent refreshes need **single-flight**.
+- **Open redirects** (`safeNext`).
+
+**How to test.**
+- `test/unit/security.test.ts` (CSRF, allowlist, single-flight).
+- `test/e2e/auth.spec.ts`: HttpOnly cookies, exactly one refresh for concurrent 401s, server-side revocation, logout.
+
+**Exercise.** Add `/v1/auth/me` to the allowlist test's "rejects" list for `POST` and check that it fails as expected.
+
+**Interview.**
+1. *localStorage vs. HttpOnly cookie for tokens?* localStorage is readable by any script on the page, so one XSS steals the session. An HttpOnly cookie is not readable by scripts; you then must defend against CSRF (SameSite, custom header, Origin check).
+2. *What problem does refresh-token rotation create for SPAs, and how do you solve it?* Parallel requests may all try to refresh with the same token. The second use looks like theft and kills the session. Deduplicate refreshes (single-flight) and briefly reuse the result.
+
+## M4 — Workspace shell and real sales data
+
+**What and why.** `WorkspaceProvider` loads the user and memberships once and provides the
+active organization, date range and theme through context. Pages fetch through the typed client.
+
+**Concepts.**
+- **Props vs. state vs. context.**
+- **Effects** synchronize with external systems; `useSyncExternalStore` subscribes to browser state (media queries, scroll).
+- **Request races:** abort the previous request when filters change (`useResource`).
+- **Derived state:** compute rather than store, e.g. "loading" = the last result belongs to another request.
+- **Money:** decimal strings, `BigInt` sums, `Intl.NumberFormat`; never add different currencies.
+
+**How to test.** `test/unit/monthly.test.ts`; `workspace.spec.ts` (preset → API query, currency separation, organization switching).
+
+**Exercise.** Add a "previous year same month" comparison to `analytics/monthly.ts` that returns `unavailable` when either month is missing. Write the test first.
+
+**Interview.**
+1. *How do you prevent a slow old response from overwriting newer data?* Cancel it with `AbortController` when inputs change, and ignore results whose request key is no longer current.
+2. *Why are frontend role checks not security?* Users control their browser and can call the API directly. The UI hides actions for convenience; the server must enforce, and a test proves a direct forbidden publish gets 403.
+
+## M5 — Import center and publication
+
+**What and why.**
+- Uploads are sent as multipart through the BFF.
+- Results are shown exactly as the server reports them.
+- Publishing is OWNER-only, behind a confirmation dialog.
+- Imports and publishes are never retried automatically.
+
+**Concepts.**
+- `FormData` and multipart encoding.
+- **Idempotency**: safe vs. unsafe operations, and why POSTs are not retried.
+- Disabling buttons while a request is pending.
+- Accessible dialogs: focus trap, Esc, and returning focus.
+
+**How to test.** `workspace.spec.ts`: client-side rejection without an API call, server validation and reconciliation failures, 409 in the dialog, confirm and cancel.
+
+**Exercise.** Show a warning when the selected CSV's name doesn't start with `SYNTHETIC_` while the active organization is classified SYNTHETIC. It's a hint only: the server still decides.
+
+**Interview.**
+1. *Why validate files on both client and server?* Client checks give fast feedback; server checks are the security boundary, because clients can be bypassed.
+2. *Should a timed-out upload be retried automatically?* No. The server may have processed it, so a retry could duplicate work. Tell the user to check the list. Our API is idempotent per file hash anyway.
+
+## M6 — WebGL Data Core (Three.js / React Three Fiber)
+
+**What and why.** A procedural scene of 540 instanced "ledger panels" moves from a scattered
+cloud into an ordered lattice as you scroll: RAW DATA → VALIDATION → RECONCILIATION → INSIGHT.
+
+**Concepts.**
+- **Scene** (objects), **camera** (PerspectiveCamera, fov 35), **renderer** (WebGL) and **render loop** (`useFrame` ≈ 60 fps).
+- **Geometry vs. material vs. mesh.**
+- **InstancedMesh**: one draw call for hundreds of objects, each with its own matrix and colour.
+- **Quaternions** for rotation interpolation (`slerp`).
+- **Lighting**: ambient, directional (key/rim) and a point light for the core glow; fog for depth.
+- **Performance:**
+  - cap the device pixel ratio;
+  - avoid per-frame allocations (scratch objects);
+  - pause the loop when off-screen or hidden;
+  - choose a tier by device capability;
+  - lazy-load the 3D code.
+- **Cleanup:** R3F disposes JSX-declared resources. Next 16 keeps hidden routes alive, so the loop is stopped imperatively.
+
+**How to test.** `marketing.spec.ts`: canvas renders and the frame counter rises; after navigating away the counter freezes; Back resumes; reduced motion and no-WebGL show the SVG.
+
+**Exercise.** Change the target layout in `three/layout.ts` from rings to a double helix. Keep the deterministic PRNG.
+
+**Interview.**
+1. *Why use instancing?* Each mesh costs a draw call (CPU → GPU overhead). Instancing renders many copies of one geometry in a single call, with per-instance transforms.
+2. *How do you stop a WebGL page from draining batteries?* Render only when visible (IntersectionObserver, `visibilitychange`), cap DPR, reduce geometry on weak devices, offer a static fallback, and free GPU resources on unmount.
+
+## M7 — Scroll choreography with GSAP
+
+**What and why.** ScrollTrigger maps scroll position to animation progress: the hero track
+(360 vh with a sticky stage) drives the 3D progress; sections reveal as they enter.
+
+**Concepts.**
+- Timelines and tweens, `scrub` (animation tied to scroll), `ScrollTrigger.batch` for lists.
+- `useGSAP` scoping and automatic cleanup.
+- `gsap.matchMedia` for reduced motion.
+- Animate `transform` and `opacity` only.
+- **Never hide content with `visibility` before revealing it**: hidden elements cannot receive keyboard focus (a test found this bug).
+
+**How to test.** Playwright with `reducedMotion: "reduce"`; the keyboard test tabs into the demo.
+
+**Exercise.** Add a scrubbed horizontal progress line under the four process steps in section 3. Disable it under reduced motion.
+
+**Interview.**
+1. *Why write scroll progress to a ref instead of React state?* Scroll fires dozens of times per second. A ref read inside the render loop avoids re-rendering React on every scroll event.
+2. *How do you make scroll animations accessible?* Respect `prefers-reduced-motion`, keep content readable and focusable without JS, avoid scroll-jacking, and never make motion the only way to get information.
+
+## M8 — Testing, accessibility and performance
+
+**What and why.**
+- **59 unit tests** cover pure logic: contract, money, security helpers and the client.
+- **34 browser tests** run the production build against a mock API with synthetic data, so they are deterministic and never touch PostgreSQL.
+- A lab performance script uses Chromium's PerformanceObserver.
+
+**Concepts.**
+- The test pyramid.
+- Contract tests vs. mocks.
+- Accessible locators (`getByRole`) that double as accessibility checks.
+- LCP and CLS.
+- Code splitting: Three.js only on qualifying devices, Recharts only in the workspace.
+
+**How to test.** `npm run verify`; `node test/perf/measure.mjs` (see its header).
+
+**Exercise.** Add `@axe-core/playwright` and assert there are no serious violations on `/login` and `/app/settings`.
+
+**Interview.**
+1. *Why test against a mock API if you have a real one?* Speed, determinism and safety: no shared database state and no real data. The contract test keeps the mock honest; a smaller set of live tests should still run against a disposable real backend.
+2. *LCP vs. CLS?* LCP is when the largest visible element finishes rendering (perceived load speed). CLS is the total unexpected layout movement. Server-rendered text heroes and font fallbacks keep both good.
