@@ -7,6 +7,12 @@ const UUID = "87239ee7-47eb-4cbe-ab63-7b13eebe549a";
 
 describe("BFF allowlist (no open proxy)", () => {
   it.each([
+    ['GET', ['reports']], ['POST', ['reports']], ['GET', ['reports', UUID]],
+    ['GET', ['reports', UUID, 'xlsx']], ['GET', ['reports', UUID, 'pptx']],
+    ['GET', ['reports', UUID, 'pilot']], ['POST', ['reports', UUID, 'pilot']],
+    ['GET', ['import-templates']], ['POST', ['import-templates']], ['GET', ['import-templates', UUID]],
+    ['POST', ['import-templates', UUID, 'approve']], ['POST', ['import-templates', UUID, 'preview']],
+    ['GET', ['sales', 'transactions']], ['GET', ['sales', 'transactions', UUID]],
     ["GET", ["analytics", "products"]],
     ["GET", ["analytics", "distributors"]], ["GET", ["analytics", "customers"]],
     ["GET", ["analytics", "products", UUID, "trend"]],
@@ -22,6 +28,8 @@ describe("BFF allowlist (no open proxy)", () => {
   });
 
   it.each([
+    ['GET', ['reports', UUID, 'pdf']], ['GET', ['reports', 'invalid', 'xlsx']],
+    ['POST', ['reports', UUID, 'xlsx']], ['DELETE', ['import-templates', UUID]],
     ["GET", ["auth", "login"]], // login goes through /api/auth/login only
     ["POST", ["auth", "refresh"]], // refresh tokens never pass through the generic proxy
     ["DELETE", ["imports", UUID]],

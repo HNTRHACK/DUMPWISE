@@ -58,6 +58,7 @@ function batch(orgId, fileName, status) {
   const invalid = status === "FAILED_VALIDATION";
   return {
     id: randomUUID(), fileName, fileSha256: randomBytes(32).toString("hex"), fileSizeBytes: 240_311, isSynthetic: true, status,
+    templateVersionId: null, rulesVersion: 'sap-billing-signs-v1',
     reconciliationStatus: invalid ? "NOT_RUN" : failed ? "FAILED" : "PASSED",
     stats: invalid ? stats({ rowsValid: 0, rowsInvalid: 0, rowsDuplicateInFile: 0, rowsInserted: 0, rowsTotal: 0 }) : stats(failed ? { rowsInserted: 0 } : {}),
     createdAt: new Date(Date.now() - 3600_000).toISOString(), createdByUserId: USERS["analyst@demo.invalid"].id, publishedAt: null, publishedByUserId: null,
@@ -200,6 +201,10 @@ createServer(async (req, res) => {
       const limit = Number(url.searchParams.get('limit') ?? 20), offset = Number(url.searchParams.get('offset') ?? 0);
       const quantities = [...new Set(items.map(r=>r.unit))].sort().map(u=>({unit:u, quantity: (items.filter(r=>r.unit===u).length*3).toFixed(3)}));
       return send(res, 200, { organizationId:a.org, currency, from, to, previousFrom:'2024-10',previousTo:'2025-09', items:items.slice(offset,offset+limit), total:items.length, limit,offset, summary: {netRevenue: items.reduce((n,r)=>n+Number(r.netRevenue),0).toFixed(2), creditedAmount:(items.length*10).toFixed(2), returnedAmount:(items.length*20).toFixed(2),cancelledAmount:'0.00',transactionCount:items.length*4,units:quantities} });
+    }
+    if (req.method === 'GET' && path === '/v1/import-templates') {
+      const a = access(req, res, session, ['OWNER', 'ANALYST']); if (!a) return;
+      return send(res, 200, { items: [], total: 0, limit: 100, offset: 0 });
     }
     if (req.method === "GET" && path === "/v1/imports") {
       const a = access(req, res, session); if (!a) return;

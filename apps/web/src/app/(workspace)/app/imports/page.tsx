@@ -27,7 +27,7 @@ export default function ImportsPage() {
       <PageHeader title="Imports" description="Upload SAP billing exports, review validation and reconciliation, and publish reconciled batches." />
 
       {can("import") ? (
-        <UploadPanel organizationId={orgId} onImported={() => { setOffset(0); list.reload(); }} />
+        <UploadPanel key={orgId} organizationId={orgId} onImported={() => { setOffset(0); list.reload(); }} />
       ) : (
         <Card className="flex items-start gap-3 p-5 text-sm text-muted">
           <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />

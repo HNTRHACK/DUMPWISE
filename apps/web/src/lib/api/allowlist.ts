@@ -19,6 +19,20 @@ export interface ProxyRoute {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export const PROXY_ROUTES: ProxyRoute[] = [
+  { method: 'GET', pattern: ['reports'], orgScoped: true },
+  { method: 'POST', pattern: ['reports'], orgScoped: true, body: 'json', slow: true },
+  { method: 'GET', pattern: ['reports', ':uuid'], orgScoped: true },
+  { method: 'GET', pattern: ['reports', ':uuid', 'xlsx'], orgScoped: true },
+  { method: 'GET', pattern: ['reports', ':uuid', 'pptx'], orgScoped: true },
+  { method: 'GET', pattern: ['reports', ':uuid', 'pilot'], orgScoped: true },
+  { method: 'POST', pattern: ['reports', ':uuid', 'pilot'], orgScoped: true, body: 'json' },
+  { method: "GET", pattern: ["import-templates"], orgScoped: true },
+  { method: "POST", pattern: ["import-templates"], orgScoped: true, body: "json" },
+  { method: "GET", pattern: ["import-templates", ":uuid"], orgScoped: true },
+  { method: "POST", pattern: ["import-templates", ":uuid", "approve"], orgScoped: true },
+  { method: "POST", pattern: ["import-templates", ":uuid", "preview"], orgScoped: true, body: "multipart", slow: true },
+  { method: "GET", pattern: ["sales", "transactions"], orgScoped: true },
+  { method: "GET", pattern: ["sales", "transactions", ":uuid"], orgScoped: true },
   { method: "GET", pattern: ["analytics", "products"], orgScoped: true },
   { method: "GET", pattern: ["analytics", "distributors"], orgScoped: true },
   { method: "GET", pattern: ["analytics", "customers"], orgScoped: true },

@@ -32,6 +32,7 @@ const NAV = [
   { href: "/app/products", label: "Products", icon: Boxes },
   { href: "/app/distributors", label: "Distributors", icon: Store },
   { href: "/app/customers", label: "Customers", icon: Users },
+  { href: "/app/reports", label: "Report center", icon: BarChart3 },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ];
 

@@ -8,6 +8,9 @@ import {
   importResultSchema,
   meSchema,
   monthlySalesSchema,
+  templatesSchema, templateSchema, templatePreviewSchema, transactionsSchema,
+  reportSchema, reportSummarySchema, reportListSchema,
+  pilotAssessmentSchema, pilotHistorySchema,
 } from "./schemas";
 
 // Browser-side API client. It ONLY talks to this site's BFF (/api/*), which holds the
@@ -141,6 +144,29 @@ async function attemptRequest<T>(path: string, method: "GET" | "POST", opts: Req
 // ---- Typed operations (one per allowlisted backend endpoint) ------------------------------
 
 export const api = {
+  assessPilot: (organizationId: string, id: string, json: unknown) => apiRequest(`/api/v1/reports/${encodeURIComponent(id)}/pilot`, { organizationId, method: 'POST', json, schema: pilotAssessmentSchema }),
+  pilotHistory: (organizationId: string, id: string, offset: number, signal?: AbortSignal) => apiRequest(`/api/v1/reports/${encodeURIComponent(id)}/pilot?limit=20&offset=${offset}`, { organizationId, schema: pilotHistorySchema, signal }),
+  reports: (organizationId: string, offset: number, signal?: AbortSignal) => apiRequest(`/api/v1/reports?limit=20&offset=${offset}`, { organizationId, schema: reportListSchema, signal }),
+  report: (organizationId: string, id: string, signal?: AbortSignal) => apiRequest(`/api/v1/reports/${encodeURIComponent(id)}`, { organizationId, schema: reportSchema, signal }),
+  createReport: (organizationId: string, json: unknown) => apiRequest('/api/v1/reports', { organizationId, method: 'POST', json, schema: reportSummarySchema, timeoutMs: 70000 }),
+  downloadReport: async (organizationId: string, id: string, format: 'xlsx' | 'pptx') => {
+    const res = await fetch(`/api/v1/reports/${encodeURIComponent(id)}/${format}`, { headers: { 'X-Organization-Id': organizationId }, credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.timeout(20000) });
+    if (!res.ok) throw new ApiError(kindForStatus(res.status), res.status, [`Download failed (${res.status}). Your permission or the report may have expired.`]);
+    const bytes = await res.blob();
+    if (bytes.size > 16 * 1024 * 1024) throw new ApiError('contract', 200, ['Export exceeds the permitted size']);
+    const url = URL.createObjectURL(bytes);
+    const link = document.createElement('a'); link.href = url; link.download = `DUMPWISE-${id}.${format}`; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+  templates: (organizationId: string, signal?: AbortSignal) => apiRequest('/api/v1/import-templates?limit=100', { organizationId, schema: templatesSchema, signal }),
+  createTemplate: (organizationId: string, json: unknown) => apiRequest('/api/v1/import-templates', { method: 'POST', organizationId, json, schema: templateSchema }),
+  approveTemplate: (organizationId: string, id: string) => apiRequest(`/api/v1/import-templates/${encodeURIComponent(id)}/approve`, { method: 'POST', organizationId, schema: templateSchema }),
+  previewTemplate: (organizationId: string, id: string, file: File) => {
+    const form = new FormData(); form.set('file', file);
+    return apiRequest(`/api/v1/import-templates/${encodeURIComponent(id)}/preview`, { method: 'POST', organizationId, form, schema: templatePreviewSchema });
+  },
+  transactions: (organizationId: string, query: Record<string, string>, signal?: AbortSignal) =>
+    apiRequest(`/api/v1/sales/transactions?${new URLSearchParams(query)}`, { organizationId, schema: transactionsSchema, signal }),
   analytics: (organizationId: string, dimension: "products" | "distributors" | "customers", query: Record<string, string>, signal?: AbortSignal) =>
     apiRequest(`/api/v1/analytics/${dimension}?${new URLSearchParams(query)}`, { organizationId, schema: analyticsSchema, signal }),
   productTrend: (organizationId: string, id: string, query: Record<string, string>, signal?: AbortSignal) =>

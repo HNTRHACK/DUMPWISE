@@ -107,6 +107,8 @@ export type ImportResult = z.infer<typeof importResultSchema>;
 
 export const importBatchSummarySchema = z.object({
   id: z.uuid(),
+  templateVersionId: z.uuid().nullable(),
+  rulesVersion: z.string(),
   fileName: z.string(),
   fileSha256: z.string(),
   fileSizeBytes: z.number().int(),
@@ -144,6 +146,62 @@ export const errorBodySchema = z.object({
   timestamp: z.string().optional(),
 });
 export type ErrorBody = z.infer<typeof errorBodySchema>;
+
+export const templateSchema = z.object({
+  id: z.uuid(), name: z.string(), description: z.string(), version: z.number().int(),
+  organizationId: z.uuid(), sourceType: z.literal('SAP_BILLING_CSV'), createdByUserId: z.uuid(),
+  approvedByUserId: z.uuid().nullable(), approvedAt: z.string().nullable(), createdAt: z.string(),
+  status: z.enum(['DRAFT', 'APPROVED']), rulesVersion: z.string(),
+  mapping: z.object({ columns: z.array(z.object({ field: z.string(), header: z.string() })),
+    dateFormat: z.string(), numberFormat: z.enum(['PLAIN', 'EN_GROUPED']), documentTypes: z.record(z.string(), z.string()) }),
+});
+export const templatesSchema = z.object({ items: z.array(templateSchema), total: z.number().int(), limit: z.number().int(), offset: z.number().int() });
+export const templatePreviewSchema = z.object({ ok: z.boolean(), templateVersionId: z.uuid(), rulesVersion: z.string(),
+  status: z.enum(['DRAFT', 'APPROVED']), sample: z.array(z.record(z.string(), z.unknown())),
+  stats: importStatsSchema.pick({ rowsTotal: true, rowsValid: true, rowsInvalid: true, rowsDuplicateInFile: true }),
+  issues: z.array(importIssueSchema), issuesTruncated: z.boolean(), reconciliationStatus: z.literal('NOT_RUN'),
+  mapping: z.array(z.object({ field: z.string(), header: z.string(), required: z.boolean(), interpretation: z.string() })),
+  limitations: z.array(z.string()),
+});
+export type ImportTemplate = z.infer<typeof templateSchema>;
+export type TemplatePreview = z.infer<typeof templatePreviewSchema>;
+export const transactionLineageSchema = z.object({
+  id: z.uuid(), billingDocument: z.string(), billingItem: z.string(), billingDate: z.string(), billingType: z.string(),
+  sku: z.string(), distributorCode: z.string(), customerCode: z.string(), netAmount: decimal, currency: z.string(),
+  productId: z.uuid(), distributorId: z.uuid(), customerId: z.uuid(), cancelledBillingDocument: z.string().nullable(),
+  quantity: decimal, unit: z.string(), batchId: z.uuid(), sourceRowNumber: z.number().int(), fileName: z.string(),
+  fileSha256: z.string(), templateVersionId: z.uuid().nullable(), rulesVersion: z.string(), sourceFileStatus: z.literal('NOT_RETAINED'),
+});
+export const transactionsSchema = z.object({ organizationId: z.uuid(), currency: z.string(), from: month, to: month,
+  total: z.number().int(), limit: z.number().int(), offset: z.number().int(),
+  summary: z.object({ netRevenue: decimal, transactionCount: z.number().int(), units: z.array(unitsSoldSchema) }),
+  items: z.array(transactionLineageSchema),
+});
+
+export const reportSummarySchema = z.object({ id: z.uuid(), createdAt: z.string(), expiresAt: z.string(),
+  configuration: z.object({ from: month, to: month, currency: z.string(), unit: z.string().nullable(), definitionVersion: z.string() }),
+});
+export const reportSchema = reportSummarySchema.extend({ snapshot: z.object({
+  organizationId: z.uuid(), organizationName: z.string(), classification: z.string(), generatedAt: z.string(),
+  from: month, to: month, currency: z.string(), unit: z.string().nullable(), definitionVersion: z.string(), metricVersion: z.string(),
+  netRevenue: decimal, credits: decimal, returns: decimal, cancellations: decimal, transactionCount: z.number().int(),
+  months: z.array(z.object({ month, netRevenue: decimal, lines: z.number().int() })),
+  units: z.array(unitsSoldSchema), coverageNote: z.string(),
+  sources: z.array(z.object({ id: z.uuid(), fileName: z.string(), publishedAt: z.string(),
+    accepted: z.number().int(), rejected: z.number().int(), duplicates: z.number().int(), inserted: z.number().int(),
+    checks: z.array(z.object({ passed: z.boolean() })),
+  })),
+}) });
+export const reportListSchema = z.object({ items: z.array(reportSummarySchema), limit: z.number().int(), offset: z.number().int() });
+export const pilotAssessmentSchema = z.object({ id: z.uuid(), manualMinutes: decimal, automatedMinutes: decimal,
+  laborMinutesDifference: decimal, reviewed: z.boolean(), createdAt: z.string(),
+  discrepancies: z.array(z.object({ description: z.string(), status: z.enum(['OPEN', 'RESOLVED']) })),
+});
+export const pilotHistorySchema = z.object({ reportId: z.uuid(), durationSource: z.literal('USER_ENTERED'),
+  reportEvidence: z.object({ generatedExports: z.number().int(), sourceBatches: z.number().int(), activityMonths: z.number().int(),
+    acceptedBatchRows: z.number().int(), rejectedBatchRows: z.number().int(), checksPassed: z.number().int(), checksTotal: z.number().int(), reconciliationPassPercent: decimal.nullable() }),
+  items: z.array(pilotAssessmentSchema), limit: z.number().int(), offset: z.number().int(),
+});
 
 export const loginRequestSchema = z.object({
   email: z.email().max(254),

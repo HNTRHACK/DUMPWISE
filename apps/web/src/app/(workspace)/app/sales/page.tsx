@@ -1,6 +1,7 @@
 "use client";
 
 import { MonthlyChart } from "@/components/charts/monthly-chart";
+import { TransactionDrilldown } from '@/components/dashboard/transaction-drilldown';
 import { CurrencyTabs } from "@/components/dashboard/currency-tabs";
 import { EmptyState, ErrorState } from "@/components/dashboard/states";
 import { useMonthlySales } from "@/components/dashboard/use-monthly-sales";
@@ -40,6 +41,7 @@ export default function SalesPage() {
         <EmptyState title="No published sales in this range">Try a longer range, or publish a reconciled import first.</EmptyState>
       ) : (
         <div className="space-y-6" aria-busy={resource.state === "loading"}>
+          <TransactionDrilldown currency={currency} />
           <Card>
             <CardHeader>
               <div>

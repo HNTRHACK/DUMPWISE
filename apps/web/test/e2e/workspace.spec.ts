@@ -201,6 +201,7 @@ test("analytics pages load through the BFF with filters, paging and exact produc
     await expect(page.getByRole("table", {name:new RegExp(dimension + " analytics in USD", "i")})).toBeVisible();
     await page.getByLabel("Search code or name").fill("no-match");
     await expect(page.getByText("No matching billing activity")).toBeVisible();
+    await expect(page.getByText("0 entity/unit rows · 0–0", { exact: true })).toBeVisible();
     await page.getByLabel("Search code or name").fill("");
     await expect(page.getByRole("table", { name: new RegExp(dimension + " analytics", "i") })).toBeVisible();
     await page.setViewportSize({width:375,height:900});

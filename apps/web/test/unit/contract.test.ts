@@ -17,6 +17,8 @@ import {
   reconciliationCheckSchema,
   tokenPairSchema,
   unitsSoldSchema,
+  templateSchema, templatesSchema, templatePreviewSchema, transactionsSchema, transactionLineageSchema,
+  reportSummarySchema, reportListSchema, reportSchema,
 } from "@/lib/api/schemas";
 
 // Contract test: the frontend's runtime schemas must agree with the backend's OpenAPI
@@ -26,6 +28,10 @@ const openapi = JSON.parse(
 ) as { components: { schemas: Record<string, { properties: Record<string, unknown>; required?: string[] }> } };
 
 const pairs: [string, z.ZodObject][] = [
+  ['TemplateVersionResponseDto', templateSchema], ['TemplateListResponseDto', templatesSchema],
+  ['TemplatePreviewResponseDto', templatePreviewSchema], ['TransactionsResponseDto', transactionsSchema],
+  ['TransactionLineageDto', transactionLineageSchema], ['ReportSummaryDto', reportSummarySchema],
+  ['ReportListDto', reportListSchema], ['ReportPreviewDto', reportSchema],
   ["AnalyticsResponseDto", analyticsSchema], ["AnalyticsRowDto", analyticsRowSchema],
   ["AnalyticsSummaryDto", analyticsSummarySchema], ["ProductTrendDto", productTrendSchema],
   ["MeDto", meSchema],

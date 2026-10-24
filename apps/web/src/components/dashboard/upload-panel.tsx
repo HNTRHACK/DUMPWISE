@@ -6,7 +6,9 @@ import { useId, useRef, useState } from "react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge, Card, CardBody, CardHeader, CardTitle, Label, Select } from "@/components/ui/primitives";
 import { ApiError, api } from "@/lib/api/client";
-import type { ImportResult } from "@/lib/api/schemas";
+import type { ImportResult, TemplatePreview } from "@/lib/api/schemas";
+import { useResource } from "@/lib/use-resource";
+import { ImportTemplates } from './import-templates';
 import { formatBytes, formatInteger } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { InlineError } from "./states";
@@ -84,6 +86,9 @@ export function UploadPanel({ organizationId, onImported }: { organizationId: st
   const [csv, setCsv] = useState<File | null>(null);
   const [totals, setTotals] = useState<File | null>(null);
   const [numberFormat, setNumberFormat] = useState<"PLAIN" | "EN_GROUPED">("PLAIN");
+  const templates = useResource(`approved-templates|${organizationId}`, signal => api.templates(organizationId, signal));
+  const [templateId, setTemplateId] = useState('');
+  const [preview, setPreview] = useState<{ file: File; id: string; data: TemplatePreview } | null>(null);
   const [pending, setPending] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -97,7 +102,10 @@ export function UploadPanel({ organizationId, onImported }: { organizationId: st
     const form = new FormData();
     form.append("file", csv, csv.name);
     form.append("controlTotals", totals, totals.name);
-    form.append("numberFormat", numberFormat);
+    if (templateId) {
+      if (!preview?.data.ok || preview.file !== csv || preview.id !== templateId) { setErrors(['Preview this file with the selected template first.']); return; }
+      form.append('templateVersionId', templateId);
+    } else form.append("numberFormat", numberFormat);
     controller.current = new AbortController();
     setPending(true);
     setResult(null);
@@ -119,7 +127,7 @@ export function UploadPanel({ organizationId, onImported }: { organizationId: st
   }
 
   return (
-    <Card>
+    <><ImportTemplates onChanged={templates.reload} /><Card>
       <CardHeader>
         <div>
           <CardTitle>Upload an SAP billing export</CardTitle>
@@ -132,13 +140,25 @@ export function UploadPanel({ organizationId, onImported }: { organizationId: st
           <DropZone label="Control totals" hint=".json · up to 1 MB" accept=".json,application/json" file={totals} onFile={setTotals} icon={FileJson} disabled={pending} />
         </div>
         <div className="flex flex-wrap items-end gap-3">
+          <label className="text-sm">Mapping version<Select aria-label="Mapping version" value={templateId} disabled={pending} onChange={e => { setTemplateId(e.target.value); setPreview(null); }}>
+            <option value="">Standard SAP aliases (legacy)</option>
+            {templates.data?.items.filter(t => t.status === 'APPROVED').map(t => <option key={t.id} value={t.id}>{t.name} v{t.version}</option>)}
+          </Select></label>
           <div className="space-y-1.5">
             <Label htmlFor="number-format">Number format</Label>
-            <Select id="number-format" value={numberFormat} disabled={pending} onChange={(e) => setNumberFormat(e.target.value as "PLAIN" | "EN_GROUPED")} className="w-auto">
+            <Select id="number-format" value={numberFormat} disabled={pending || !!templateId} onChange={(e) => setNumberFormat(e.target.value as "PLAIN" | "EN_GROUPED")} className="w-auto">
               <option value="PLAIN">Plain (1234.56)</option>
               <option value="EN_GROUPED">Grouped (1,234.56 or 12,34,567.89)</option>
             </Select>
           </div>
+          {templateId ? <Button variant="secondary" disabled={pending || !csv} onClick={async () => {
+            if (!csv) return;
+            const problem = checkCsv(csv); if (problem) { setErrors([problem]); return; }
+            setPending(true); setErrors([]); setPreview(null);
+            try { setPreview({ file: csv, id: templateId, data: await api.previewTemplate(organizationId, templateId, csv) }); }
+            catch (e) { setErrors(e instanceof ApiError ? e.messages : ['Preview failed']); }
+            finally { setPending(false); }
+          }}>Preview mapping and rows</Button> : null}
           <Button onClick={submit} disabled={pending} className="ml-auto">
             {pending ? <Loader2 className="animate-spin" aria-hidden /> : <Upload aria-hidden />}
             {pending ? "Importing…" : "Import"}
@@ -146,9 +166,17 @@ export function UploadPanel({ organizationId, onImported }: { organizationId: st
           {pending ? <Button variant="ghost" onClick={() => controller.current?.abort()}>Cancel</Button> : null}
         </div>
         <InlineError messages={errors} />
+        {templates.state === 'error' ? <p className="text-sm text-danger">Custom mappings could not be loaded. <button className="underline" onClick={templates.reload}>Retry templates</button></p> : null}
+        {preview && preview.file === csv && preview.id === templateId ? <div role="status" className="rounded-xl border border-border p-4 text-sm">
+          <p>File preview: {preview.data.stats.rowsValid} accepted; {preview.data.stats.rowsInvalid} rejected; {preview.data.stats.rowsDuplicateInFile} duplicates. Reconciliation has not run.</p>
+          <details><summary className="cursor-pointer">Column interpretation and issues</summary><ul>{preview.data.mapping.map(m => <li key={m.field}>{m.header} → {m.field}: {m.interpretation}</li>)}</ul>
+            <ul>{preview.data.issues.map((i, n) => <li key={n}>Line {i.line ?? '—'}: {i.message}</li>)}</ul>
+            {preview.data.issuesTruncated ? <p>Only the first 500 issues are shown.</p> : null}
+          </details>
+        </div> : null}
         {result ? <ImportResultView result={result} /> : null}
       </CardBody>
-    </Card>
+    </Card></>
   );
 }
 

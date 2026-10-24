@@ -3,6 +3,7 @@
 import { ArrowDownRight, ArrowUpRight, ArrowRight, Info } from "lucide-react";
 import Link from "next/link";
 import { MonthlyChart } from "@/components/charts/monthly-chart";
+import { TransactionDrilldown } from '@/components/dashboard/transaction-drilldown';
 import { CurrencyTabs } from "@/components/dashboard/currency-tabs";
 import { ImportStatusBadge } from "@/components/dashboard/import-status";
 import { EmptyState, ErrorState } from "@/components/dashboard/states";
@@ -56,6 +57,7 @@ export default function OverviewPage() {
         </EmptyState>
       ) : (
         <div aria-busy={resource.state === "loading"} className="space-y-6">
+          <TransactionDrilldown currency={currency} />
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <Kpi label={`Net sales · ${currency}`} value={formatMoneyScaled(summary.netSales, currency)} hint={<span className="tabular">{formatMoney(summary.netSales, currency)}</span>} />
             <Kpi

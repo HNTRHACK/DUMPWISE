@@ -54,6 +54,7 @@ function BatchView({ batch, onChanged }: { batch: ImportBatchDetail; onChanged: 
           </Card>
         ))}
       </div>
+      <p className="mt-4 break-words text-xs text-muted">Mapping: {batch.templateVersionId ?? 'Legacy fixed SAP aliases'} · financial rules: {batch.rulesVersion}. Source record positions and file checksum are retained; the original CSV file is not stored.</p>
       <ReconciliationTable checks={batch.reconciliation} status={batch.reconciliationStatus} />
       <IssuesTable issues={batch.issues} />
     </div>
