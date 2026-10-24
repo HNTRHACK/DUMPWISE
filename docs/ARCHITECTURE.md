@@ -209,3 +209,29 @@ The list query uses CTEs: monthly groups facts by entity/month/unit, current sel
 Existing indexes on sales_transactions (organization_id,billing_date), (organization_id,product_id), (organization_id,distributor_id), (organization_id,customer_id) and (organization_id,import_batch_id), plus composite master keys, support the tenant/date scan and joins. The upper bound is 72 months read (36 current plus 36 preceding). SQL pagination bounds transfer, not aggregation work: all matching groups still have to be aggregated and sorted. No production-scale query-plan benchmark was performed. Inspect EXPLAIN (ANALYZE, BUFFERS) on representative synthetic volumes before adding indexes/materialized rollups; high offsets remain more expensive than keyset pagination.
 
 The three Next.js pages share AnalyticsPage. Existing workspace state supplies organization and 3/6/12 completed-month ranges; existing monthly sales discovers available currencies and units. Typed BFF operations validate response schemas against OpenAPI. Each report is keyed by organization/range/currency, aborts superseded requests and shows loading/error states instead of relabelling stale results. Filter changes reset pagination. Product selection loads a trend through the BFF; seriesFor fills absent months with null and MonthlyChart converts to numbers only for geometry. Exact tables support the chart and preserve separate quantity units. No frontend analytics fixture is shipped in the application; browser-only synthetic mocks live under test/e2e.
+
+## Phase 5 pilot reporting workflow
+
+ImportsModule now includes immutable ImportTemplateVersion governance and read-only previews.
+Optional approved template context extends the original parser/normalizer; it does not replace
+sign rules, content hashing, SAP keys, SQL reconciliation, transaction rollback or OWNER publication.
+ImportBatch stores a tenant-composite template reference and stable rules version. Additive
+migrations enforce template/batch provenance immutability and FORCE RLS on new tables.
+
+Sales transactions expose source lineage with inherited analytics predicates, deterministic
+business ordering, bounded paging and full-subset totals in one SQL statement. Detailed source
+identifiers require OWNER/ANALYST. Normal reporting still supports VIEWER and unchanged Phase 4
+semantics. See DATA_LINEAGE.md for source-record and evidence limitations.
+
+ReportsModule reads bounded facts, source metadata and checks in a single SQL snapshot, then
+uses Decimal-safe in-memory grouping to encode XLSX/PPTX from one immutable value object.
+Organization/key advisory locking prevents duplicate generation for retried idempotent requests.
+Both formats and evidence are INSERTed atomically only after successful generation. Private
+bytea storage, download authorization/expiry, explicit grants and tenant composite keys maintain
+the existing role separation. Stable report-definition and metric versions are code-owned;
+configuration is frozen per organization snapshot. The browser receives an aggregate preview,
+not the full transaction collection. See REPORT_EXPORTS.md for ceilings and deferred jobs/storage.
+
+PilotAssessment is append-only, linked to a report by organization/id. Entered labor durations,
+review statements and bounded discrepancy notes remain distinguishable from machine timings
+and independently validated business outcomes. There is no forecasting or invented cost/margin.

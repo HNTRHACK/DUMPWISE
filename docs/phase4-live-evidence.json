@@ -1,0 +1,202 @@
+{
+  "database": "dumpwise_live_d4c077ab1efa3124_test",
+  "sourceMode": "READ ONLY",
+  "checks": [
+    "Read-only repeatable snapshot of existing published synthetic data",
+    "Disposable copy created; fresh VIEWER identities; no source credentials or sessions copied",
+    "Actual restricted role: NOSUPERUSER/NOBYPASSRLS and missing-context SELECT returns zero",
+    "Real browser login -> HttpOnly BFF session -> real Nest authentication on disposable PostgreSQL",
+    "2026-07..2026-09 INR: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "2026-07..2026-09 USD: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "2026-04..2026-09 INR: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "2026-04..2026-09 USD: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "2025-10..2026-09 INR: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "2025-10..2026-09 USD: all dimensions, full SQL rows/credits/quantities/growth, summaries, Python controls, filters, numeric/code sorts and 7-row pagination",
+    "Product trends in INR/USD and each unit equal independent monthly SQL; absent months are omitted",
+    "Browser loading state before real analytics response",
+    "Real Products/Distributors/Customers pages: exact KPI, product chart/table, empty/filter/unit/sort/currency/range states and 375px layout",
+    "Organization isolation: A cannot query B (403), B cannot resolve A product (404), B can read own reports, anonymous BFF/Nest calls denied (401)",
+    "Browser error/permission state from actual 403 and recovery after authorized reload",
+    "Real API validation, SQL-like literal search and empty future range",
+    "No uncaught browser page errors",
+    "Development row counts and fingerprints unchanged across all 13 tables"
+  ],
+  "totals": [
+    {
+      "from": "2026-07",
+      "to": "2026-09",
+      "currency": "INR",
+      "netRevenue": "148787290.80",
+      "pythonControl": "148787290.80"
+    },
+    {
+      "from": "2026-07",
+      "to": "2026-09",
+      "currency": "USD",
+      "netRevenue": "360337.08",
+      "pythonControl": "360337.08"
+    },
+    {
+      "from": "2026-04",
+      "to": "2026-09",
+      "currency": "INR",
+      "netRevenue": "289877205.72",
+      "pythonControl": "289877205.72"
+    },
+    {
+      "from": "2026-04",
+      "to": "2026-09",
+      "currency": "USD",
+      "netRevenue": "563443.61",
+      "pythonControl": "563443.61"
+    },
+    {
+      "from": "2025-10",
+      "to": "2026-09",
+      "currency": "INR",
+      "netRevenue": "574132689.75",
+      "pythonControl": "574132689.75"
+    },
+    {
+      "from": "2025-10",
+      "to": "2026-09",
+      "currency": "USD",
+      "netRevenue": "1062439.58",
+      "pythonControl": "1062439.58"
+    }
+  ],
+  "discrepancies": [],
+  "sourceBefore": {
+    "organizations": {
+      "count": 2,
+      "hash": "26072c5993d5902ffcf5f0fb28277313"
+    },
+    "users": {
+      "count": 3,
+      "hash": "0144ee05e54993fb4e3c0561d43d804c"
+    },
+    "memberships": {
+      "count": 3,
+      "hash": "9424700cddfeb43e3727db201fad3efe"
+    },
+    "auth_sessions": {
+      "count": 9,
+      "hash": "3104e9892f58d0609d3a166831b10803"
+    },
+    "user_login_sources": {
+      "count": 3,
+      "hash": "cffb4fc4abe54245f5ebb61f15294c7f"
+    },
+    "rate_limit_buckets": {
+      "count": 15,
+      "hash": "eb7ef0e29756f4b4e1bef8977c4c459e"
+    },
+    "audit_events": {
+      "count": 30,
+      "hash": "062eac240cf62ddbc31efb5c8806ee52"
+    },
+    "import_batches": {
+      "count": 3,
+      "hash": "3d1b0051e1f02fbd52962a812688f6fa"
+    },
+    "products": {
+      "count": 40,
+      "hash": "fd6f7c6168392f1582ec89ecd8638066"
+    },
+    "distributors": {
+      "count": 16,
+      "hash": "997ea168ea7a6e86d85b9530c97271a0"
+    },
+    "customers": {
+      "count": 80,
+      "hash": "b4d82e95b1ca120da206b1f6b41e9480"
+    },
+    "sales_transactions": {
+      "count": 4988,
+      "hash": "20c3cb8f4d74edcefa47fa1a00915ce3"
+    },
+    "reconciliation_results": {
+      "count": 252,
+      "hash": "a05d8e7abb7cd60d19e6d1ddb347f861"
+    }
+  },
+  "snapshot": {
+    "organizations": 2,
+    "products": 40,
+    "distributors": 16,
+    "customers": 80,
+    "import_batches": 2,
+    "sales_transactions": 4988,
+    "reconciliation_results": 168
+  },
+  "ranges": [
+    {
+      "from": "2026-07",
+      "to": "2026-09"
+    },
+    {
+      "from": "2026-04",
+      "to": "2026-09"
+    },
+    {
+      "from": "2025-10",
+      "to": "2026-09"
+    }
+  ],
+  "sourceAfter": {
+    "organizations": {
+      "count": 2,
+      "hash": "26072c5993d5902ffcf5f0fb28277313"
+    },
+    "users": {
+      "count": 3,
+      "hash": "0144ee05e54993fb4e3c0561d43d804c"
+    },
+    "memberships": {
+      "count": 3,
+      "hash": "9424700cddfeb43e3727db201fad3efe"
+    },
+    "auth_sessions": {
+      "count": 9,
+      "hash": "3104e9892f58d0609d3a166831b10803"
+    },
+    "user_login_sources": {
+      "count": 3,
+      "hash": "cffb4fc4abe54245f5ebb61f15294c7f"
+    },
+    "rate_limit_buckets": {
+      "count": 15,
+      "hash": "eb7ef0e29756f4b4e1bef8977c4c459e"
+    },
+    "audit_events": {
+      "count": 30,
+      "hash": "062eac240cf62ddbc31efb5c8806ee52"
+    },
+    "import_batches": {
+      "count": 3,
+      "hash": "3d1b0051e1f02fbd52962a812688f6fa"
+    },
+    "products": {
+      "count": 40,
+      "hash": "fd6f7c6168392f1582ec89ecd8638066"
+    },
+    "distributors": {
+      "count": 16,
+      "hash": "997ea168ea7a6e86d85b9530c97271a0"
+    },
+    "customers": {
+      "count": 80,
+      "hash": "b4d82e95b1ca120da206b1f6b41e9480"
+    },
+    "sales_transactions": {
+      "count": 4988,
+      "hash": "20c3cb8f4d74edcefa47fa1a00915ce3"
+    },
+    "reconciliation_results": {
+      "count": 252,
+      "hash": "a05d8e7abb7cd60d19e6d1ddb347f861"
+    }
+  },
+  "ok": true,
+  "evidenceHash": "7275e6d6e5acaf02d756db8a46b2c78dc2f39be7658764892f3e78520bcbd916"
+}

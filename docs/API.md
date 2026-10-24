@@ -136,3 +136,31 @@ The response includes organizationId, currency, from, to, previousFrom, previous
 Growth compares the requested N months to the immediately preceding N months, for the same entity/unit/filter/currency. Every month in both periods must contain at least one eligible line and the previous net revenue must be positive. Otherwise growthPercent is null and growthReason explains incomplete coverage or a zero/negative base. Current negative revenue yields a valid negative growth result when the base qualifies. Missing activity is not proof of zero sales or complete source coverage.
 
 Only PUBLISHED batches with reconciliation_status PASSED are included. Product ids from other organizations return 404 to a member of the requested organization; non-members receive 403. Trends omit absent months; clients render those as gaps. The web app uses the same four allowlisted BFF GET routes at /api/v1/analytics/... . OpenAPI is generated in docs/openapi.json.
+
+## Phase 5 additions
+
+All routes below use bearer sessions plus X-Organization-Id, actual membership and transaction-local
+RLS context. Detailed source operations require OWNER/ANALYST; only OWNER approves templates.
+
+| Method / path | Contract |
+|---|---|
+| POST /v1/import-templates | Immutable draft name, description, version, strict declarative mapping |
+| GET /v1/import-templates | limit 1..100, offset 0..10000 |
+| GET /v1/import-templates/:id | Mapping and human-readable interpretation |
+| POST /v1/import-templates/:id/approve | OWNER financial interpretation approval |
+| POST /v1/import-templates/:id/preview | Multipart CSV file; no business writes; NOT_RUN reconciliation |
+| POST /v1/imports | Existing multipart contract plus optional approved templateVersionId; no numberFormat override with template |
+| GET /v1/sales/transactions | Required from/to/currency, optional unit/entity/batch/transaction UUIDs and dimension/literal search; full-subset totals + bounded page |
+| GET /v1/sales/transactions/:id | Same report scope, one authorized published source item or 404 |
+| POST /v1/reports | 3/6/12-month from/to, one currency, optional unit, UUID idempotencyKey |
+| GET /v1/reports | Paginated unexpired private report metadata |
+| GET /v1/reports/:id | Frozen preview and metadata; transaction collection omitted |
+| GET /v1/reports/:id/xlsx | Authorized no-store attachment, seven-day access expiry |
+| GET /v1/reports/:id/pptx | Same snapshot, editable native tables/text |
+| POST /v1/reports/:id/pilot | Entered manualMinutes/automatedMinutes decimal text, reviewed boolean, bounded discrepancy descriptions/statuses |
+| GET /v1/reports/:id/pilot | Paginated append-only assessments and frozen source/check evidence |
+
+See REPORT_TEMPLATE_SPEC.md, DATA_LINEAGE.md, REPORT_EXPORTS.md and PILOT_VALIDATION.md for
+field definitions, precision policy, source evidence limits and supported pilot workflow.
+The generated OpenAPI includes these routes and request/response DTOs. No endpoint accepts
+arbitrary SQL/executable mappings, cross-currency aggregation or financial rule overrides.

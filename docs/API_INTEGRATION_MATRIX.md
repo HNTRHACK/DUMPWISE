@@ -50,3 +50,7 @@ sales: published batches only, organization-scoped, one currency per request, de
 ## Phase 4 implemented contract (supersedes earlier proposals)
 
 Products, distributors and customers now call GET /v1/analytics/products, /v1/analytics/distributors and /v1/analytics/customers via allowlisted BFF routes. Product drilldown calls GET /v1/analytics/products/:id/trend. Exact query/response fields are in API.md and generated openapi.json. Cost/profit/freight/retention metrics remain unsupported and are not shown. Earlier placeholder DTO proposals are historical, not the current contract.
+
+## Phase 5 pilot additions
+
+Import templates/approval/preview, scoped transaction lineage, report generation/preview/private downloads and entered pilot assessment/history are connected through the existing BFF. Source-detail operations require OWNER/ANALYST; template approval requires OWNER. The generic report center uses real APIs; no production fixture results are embedded. See REPORT_TEMPLATE_SPEC.md, DATA_LINEAGE.md, REPORT_EXPORTS.md and PHASE_5_RESULTS.md for boundaries and actual verification. Native slide preview/charts, custom company report layouts, durable large jobs and physical retention cleanup remain gaps.

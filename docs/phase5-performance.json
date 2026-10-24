@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-10-24T20:24:13.533Z",
+  "node": "v24.13.1",
+  "scope": "Synthetic in-process aggregation + XLSX/PPTX encoding/integrity checks only. No SQL, HTTP, concurrency or company workflow comparison.",
+  "results": [
+    {
+      "facts": 100,
+      "samples": [
+        {
+          "aggregationMs": 7.97,
+          "fileGenerationMs": 97.49,
+          "xlsxBytes": 32399,
+          "pptxBytes": 336416
+        },
+        {
+          "aggregationMs": 2.3,
+          "fileGenerationMs": 45.98,
+          "xlsxBytes": 32400,
+          "pptxBytes": 336416
+        },
+        {
+          "aggregationMs": 2.21,
+          "fileGenerationMs": 49.87,
+          "xlsxBytes": 32400,
+          "pptxBytes": 336416
+        }
+      ]
+    },
+    {
+      "facts": 1000,
+      "samples": [
+        {
+          "aggregationMs": 9.95,
+          "fileGenerationMs": 138.37,
+          "xlsxBytes": 98801,
+          "pptxBytes": 336483
+        },
+        {
+          "aggregationMs": 11.46,
+          "fileGenerationMs": 153.78,
+          "xlsxBytes": 98801,
+          "pptxBytes": 336483
+        },
+        {
+          "aggregationMs": 8.56,
+          "fileGenerationMs": 141.27,
+          "xlsxBytes": 98800,
+          "pptxBytes": 336483
+        }
+      ]
+    },
+    {
+      "facts": 5000,
+      "samples": [
+        {
+          "aggregationMs": 30.45,
+          "fileGenerationMs": 486.14,
+          "xlsxBytes": 376758,
+          "pptxBytes": 336550
+        },
+        {
+          "aggregationMs": 34.44,
+          "fileGenerationMs": 462.83,
+          "xlsxBytes": 376758,
+          "pptxBytes": 336550
+        },
+        {
+          "aggregationMs": 37.76,
+          "fileGenerationMs": 580.33,
+          "xlsxBytes": 376757,
+          "pptxBytes": 336550
+        }
+      ]
+    }
+  ]
+}

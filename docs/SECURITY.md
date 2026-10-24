@@ -52,7 +52,7 @@ The system is a local development build (Phase 2B security hardening in progress
 ### Input and file handling
 - Global `ValidationPipe` with `whitelist` and `forbidNonWhitelisted`. JSON body limit is 100 KB.
 - Imports: byte limit checked **before** reading the file into memory, a row limit, and a 64 KB record limit.
-- `.xlsx`, `.xlsm` and `.xls` files are detected by signature and **rejected without being opened**. No spreadsheet library is installed, so **macros can never execute**.
+- Uploaded `.xlsx`, `.xlsm` and `.xls` files are detected by signature and **rejected without being opened**. Phase 5 libraries generate Office files only; the application never parses uploaded spreadsheet archives or executes macros.
 - Strict UTF-8 decoding (invalid bytes are an error, not silently replaced); files containing NUL bytes are rejected.
 - Parameterized SQL only (Prisma query builder and tagged-template `$queryRaw`). No string-built SQL with user input. The role script escapes its password with `escapeLiteral` and validates the role name.
 - Ambiguous amount, currency, quantity and date columns or values are rejected, never guessed.
@@ -83,7 +83,7 @@ The system is a local development build (Phase 2B security hardening in progress
 | 5 | No TLS (plain HTTP on localhost; DB connection without SSL) | Fine on localhost only | TLS termination and `sslmode=require` in any shared environment |
 | 6 | No encryption at rest beyond the host disk; no backups of the Docker volume | Data loss or local theft | Managed PostgreSQL with encryption and backups |
 | 7 | The migration role is the container superuser | Over-privileged migrations | A dedicated schema-owner role without superuser |
-| 8 | Text values are stored as exported. If later exported to Excel or PowerPoint, values starting with `=`, `+`, `-` or `@` could be interpreted as formulas (CSV injection) | Future exports | Escape on export (Phase: presentations) |
+| 8 | Raw source text remains stored as exported; any future export format must maintain injection protection | New formats could reintroduce spreadsheet injection | Phase 5 XLSX uses explicit text cells and protective escaping; generated archives reject formulas/external connections/macros. No CSV export exists. |
 | 9 | Issue lists are capped at 500 per batch | Truncated diagnostics | Store issues in a table with paging |
 | 10 | Only billing types F2, G2, RE and S1 are supported; others are rejected | Real exports with L2 or S2 will fail validation | Extend the rule table with business sign-off |
 | 11 | The Swagger UI is on by default in development | Information disclosure if exposed | Off in production by default (`NODE_ENV=production`) |
@@ -122,3 +122,44 @@ Known login sources are SHA-256(user ID, IP) fingerprints recorded only after a 
 Operator cleanup: run npm run auth:cleanup with PROVISIONER_DATABASE_URL and PROVISIONER_DB_USER set to the non-superuser provisioner. It deletes at most AUTH_CLEANUP_BATCH_SIZE rows from each of auth_sessions and rate_limit_buckets (default 1000, allowed 1..10000). Sessions must have expired or been revoked more than AUTH_CLEANUP_RETENTION_DAYS ago (default 7, allowed 1..365). Recent revocations remain for diagnostics/reuse evidence. Rate buckets are eligible only once both their window and any block have expired; DELETE rechecks bucket expiry to preserve concurrent renewed activity. The command is transactional and has a 30-second statement timeout. API DELETE permissions, tenant policies, financial tables and audit history are unchanged.
 
 Schedule the operator command daily outside the API process and repeat bounded batches to clear a backlog. No host scheduler or development cleanup was run in this continuation. It prints counts only. Test databases/roles are still retained; auth cleanup does not delete them. Exact final test counts are in PHASE_2B_HANDOFF.md.
+
+## Phase 5 import governance, source access and private exports
+
+Import template versions carry organization context and immutable mapping JSON. Only a
+small allowlisted language is accepted: exact columns, explicit date/number formats and
+reviewed mappings to existing billing signs. Known SAP types cannot be redefined. OWNER
+approval is enforced by guard and membership service; no executable mappings or overrides.
+Database triggers protect version meaning and batch template/rules provenance. The runtime
+role can INSERT template versions and UPDATE approval columns only. It cannot rewrite mappings.
+
+Lineage and source-detail reports require OWNER/ANALYST; VIEWER summary access is unchanged.
+Queries bind inputs, use explicit tenant predicates/composite joins and require PUBLISHED/PASSED
+batches. Source files are not retained: record positions/checksums are not claimed as original
+file evidence. Preview does not write business records and does not claim reconciliation.
+
+New import_template_versions, report_snapshots and pilot_assessments tables all ENABLE/FORCE
+RLS. Snapshot/assessment runtime grants are SELECT/INSERT only. The provisioner has no access
+to these tables. Real PostgreSQL tests exercise missing context, cross-tenant operations and
+A/B/A commit/rollback through a single-connection pool. Existing tenant policies/grants are
+not weakened; there are now 12 RLS-protected tables.
+
+Reports read all evidence in one SQL statement snapshot, use Decimal aggregation and publish
+both formats atomically. Generation is bounded to 5000 current/comparison facts, 100 batches,
+5000 checks and 16 MiB per output. Same-key requests serialize with a transaction advisory lock.
+The runtime cannot UPDATE/DELETE completed snapshots. Downloads recheck membership/role and
+seven-day access expiry; they use no-store and private authenticated routes, never public links.
+
+Files are private database bytea values. Access expiry is implemented; physical retention cleanup,
+storage encryption, durable background jobs and operational scheduling are NOT implemented.
+No production storage/deployment readiness is asserted. Pilot measurements/review statements
+are entered by users and remain append-only; they do not prove ROI or financial savings.
+
+Generated XLSX/PPTX archives are checked for macros, external connections/links and external
+relationships. Financial decimal text and leading-zero IDs are preserved. Source text is
+neutralized against spreadsheet formula injection. ExcelJS/PptxGenJS are used for generation;
+only internally generated workbooks are read by tests. Scoped patched transitive overrides
+and actual npm audit results are recorded in PHASE_5_RESULTS.md.
+
+All new migrations and permissions were applied only to fresh disposable databases. Existing
+development accounts/passwords/data were not changed. Disposable databases/roles remain for
+inspection; no reset, truncation or cleanup was run.

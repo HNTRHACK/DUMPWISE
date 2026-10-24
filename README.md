@@ -3,12 +3,21 @@
 Enterprise sales and logistics intelligence for Indian manufacturing and distribution
 companies that run SAP.
 
-> **Status: Phase 3 (web frontend) on branch `feat/security-hardening`, uncommitted.**
+> **Status: Phase 5 bounded synthetic pilot workflow verified on `feat/security-hardening`.**
 > `apps/api`: NestJS API with revocable sessions, organization roles, PostgreSQL row-level
 > security, CSV import with reconciliation, and monthly sales. `apps/web`: Next.js 16 marketing
-> site with a 3D hero, and an authenticated workspace (overview, sales, imports, settings)
+> site with a 3D hero, and an authenticated workspace (overview, sales, imports, intelligence and reports)
 > connected to the real API through a secure same-origin BFF. All data in the repository is
 > **synthetic**. No live SAP integration and no forecasting yet.
+
+Phase 5 adds reviewed import mapping versions, read-only CSV previews, source lineage,
+private editable XLSX/PPTX snapshots and entered pilot measurements. See
+[pilot plan](docs/PILOT_READINESS_PLAN.md), [template specification](docs/REPORT_TEMPLATE_SPEC.md),
+[lineage](docs/DATA_LINEAGE.md), [report exports](docs/REPORT_EXPORTS.md) and
+[actual results and remaining gates](docs/PHASE_5_RESULTS.md). The historical tables/test
+counts below describe earlier phases, not the current verification totals. New migrations
+have been exercised only in disposable databases; development migration is an operator step,
+not something the verification scripts perform.
 
 ## What exists today
 

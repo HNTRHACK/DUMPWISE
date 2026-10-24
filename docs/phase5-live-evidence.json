@@ -1,0 +1,28 @@
+{
+  "database": "dumpwise_pilot_f241f957eba111bb_test",
+  "syntheticOnly": true,
+  "developmentConnectionOpened": false,
+  "checks": [
+    "Fresh database and isolated synthetic OWNER/VIEWER accounts; no development connection opened",
+    "Browser creates an explicit draft and OWNER approves immutable mapping version",
+    "Real configurable CSV preview -> import -> independent controls reconcile -> OWNER publishes",
+    "All intelligence views drill into real paged source lines; exact currency/unit subset totals preserved",
+    "Report center generates, previews and downloads both private editable formats through the BFF",
+    "Pilot assessment records entered labor minutes and discrepancy statement without financial ROI claims",
+    "Two organizations with identical SAP IDs remain isolated; VIEWER cannot access source reports/templates/lineage",
+    "Report center fits 375px viewport and owner flow has no uncaught page errors",
+    "Independent SQL = stored snapshot = exact XLSX cell = editable PPTX sales table"
+  ],
+  "reportId": "d396b275-818f-4857-8125-a08d4fca1d26",
+  "templateVersionId": "b6a4b7cf-ff24-4ea0-b79d-c940c2d8538d",
+  "netRevenue": "65.00",
+  "currency": "INR",
+  "enteredLaborMinutes": {
+    "manual": "90.00",
+    "automated": "30.00",
+    "difference": "60.00",
+    "source": "USER_ENTERED_TEST_INPUT"
+  },
+  "lines": 4,
+  "ok": true
+}

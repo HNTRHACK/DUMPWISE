@@ -134,3 +134,18 @@ make every page dynamic.
 ## Phase 4 update
 
 Products, Distributors and Customers are now functional authenticated analytics pages (no longer Coming next). AnalyticsPage shares KPI, filter, table, pagination and state handling. Four new org-scoped GET operations are allowlisted in the BFF, including a UUID-validated product trend. Four new runtime schemas match the generated AnalyticsRowDto, AnalyticsSummaryDto, AnalyticsResponseDto and ProductTrendDto contracts. Backend details and growth definitions are documented in API.md and ARCHITECTURE.md. Browser mocks remain test-only; real financial values always arrive from the authenticated API.
+
+## Phase 5 workspace integration
+
+Imports includes organization-keyed template review/approval and per-file/version validation
+preview, then uses the original upload and publish paths. Overview, Sales and all intelligence
+views expose a role-gated TransactionDrilldown with exact full-subset totals and paginated
+source evidence. Selected product/distributor/customer drilldowns use canonical entity UUIDs.
+
+Report center uses the existing workspace context, currency discovery, design primitives,
+useResource and authenticated BFF. Typed runtime schemas and explicit route allowlists extend
+the existing contract; CSRF/session behavior is unchanged. Report generation retains an
+idempotency key across retries. Snapshot preview and private binary downloads refer to the
+same immutable report ID. Entered pilot durations/review notes remain distinct from timings.
+Large source collections stay out of report-preview responses and are available through
+lineage paging or the authorized workbook. No marketing/animation tokens were replaced.

@@ -25,8 +25,8 @@ describe('actual PostgreSQL enforcement', () => {
   it('uses a non-owner, non-superuser, non-bypass runtime role', async () => {
     const r = await pool.query('SELECT rolsuper,rolbypassrls,rolcreaterole FROM pg_roles WHERE rolname=current_user');
     expect(r.rows[0]).toEqual({ rolsuper: false, rolbypassrls: false, rolcreaterole: false });
-    const tables = await pool.query(`SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname IN ('import_batches','products','distributors','customers','sales_transactions','reconciliation_results','organizations','memberships','audit_events')`);
-    expect(tables.rows).toHaveLength(9);
+    const tables = await pool.query(`SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relname IN ('import_batches','products','distributors','customers','sales_transactions','reconciliation_results','organizations','memberships','audit_events','import_template_versions','report_snapshots','pilot_assessments')`);
+    expect(tables.rows).toHaveLength(12);
     expect(tables.rows.every(r => r.relrowsecurity && r.relforcerowsecurity)).toBe(true);
   });
 
@@ -71,7 +71,7 @@ describe('actual PostgreSQL enforcement', () => {
     const provisioner = new pg.Client({ connectionString: process.env['TEST_PROVISIONER_DATABASE_URL'] });
     await provisioner.connect();
     try {
-      for (const table of ['products', 'sales_transactions', 'import_batches', 'reconciliation_results', 'customers', 'distributors']) {
+      for (const table of ['products', 'sales_transactions', 'import_batches', 'reconciliation_results', 'customers', 'distributors', 'import_template_versions', 'report_snapshots', 'pilot_assessments']) {
         await expect(provisioner.query(`SELECT * FROM ${table}`)).rejects.toMatchObject({ code: '42501' });
       }
     } finally { await provisioner.end(); }
